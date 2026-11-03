@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#f4f4f1" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#111110" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#eadfbe" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171a2b" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -19,52 +19,57 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@500;700;900&display=swap">
 <style>
-/* Layout: Bauhaus grid. A rail of views, one panel, the map. Flat paper, 1.5px ink rules, no shadows. */
+/* Layout: Bauhaus grid. A rail of views, one panel, the map. Ochre paper with a painted grain, 1.5px indigo rules, no shadows.
+   Palette from the painting: vermilion = where we sleep, ultramarine = see and make, ochre = eat, indigo ink = how we move. */
 :root{
-  --paper:#f4f4f1; --surface:#ffffff; --sunk:#ebebe6;
-  --ink:#141414; --ink-2:#55554f; --ink-3:#6b6b64;
-  --line:rgba(20,20,20,.12); --line-strong:rgba(20,20,20,.28);
-  --red:#cc3226; --red-deep:#a8271d; --red-ink:#b0281d; --red-tint:#f9e2df;
-  --blue:#1d4fa3; --blue-ink:#1d4fa3; --blue-tint:#e1e8f5;
-  --yellow:#f2b31b; --yellow-ink:#8a6200; --yellow-tint:#fcf0cf;
-  --on-red:#ffffff; --on-blue:#ffffff; --on-yellow:#141414;
-  --sea:#e3e3de; --land:#ffffff; --coast:#141414; --pref-line:rgba(20,20,20,.16); --rail:#b9b9b2;
+  --paper:#eadfbe; --surface:#f6efda; --sunk:#e1d4ad;
+  --ink:#1b1d2e; --ink-2:#4c4a52; --ink-3:#625e55;
+  --line:rgba(27,29,46,.14); --line-strong:rgba(27,29,46,.32);
+  --red:#c43d22; --red-deep:#a3301a; --red-ink:#a3301a; --red-tint:#f2d5c3;
+  --blue:#2b3b8f; --blue-ink:#2b3b8f; --blue-tint:#dcdae0;
+  --yellow:#b39549; --yellow-ink:#6e5518; --yellow-tint:#e8d6a0;
+  --on-red:#ffffff; --on-blue:#f6efda; --on-yellow:#1b1d2e;
+  --sea:#2a3156; --sea-ink:#c5c0ae; --land:#f1e7c9; --coast:#1b1d2e; --pref-line:rgba(27,29,46,.2); --rail:#a8987a; --route:#c43d22;
+  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.27 0 0 0 0 0.2 0 0 0 0 0.11 1.2 0 0 0 -0.53'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url%28%23n%29'/%3E%3C/svg%3E");
   --stamp-blend:multiply;
   --font:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
   --font-ja:"Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic",system-ui,sans-serif;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --paper:#111110; --surface:#1b1b1a; --sunk:#262624;
-    --ink:#f2f1ec; --ink-2:#b5b4ad; --ink-3:#7e7d77;
-    --line:rgba(242,241,236,.12); --line-strong:rgba(242,241,236,.3);
-    --red:#cc3226; --red-deep:#e04a3d; --red-ink:#ff8d80; --red-tint:#37130f;
-    --blue:#3d6cc6; --blue-ink:#93b2ee; --blue-tint:#142039;
-    --yellow:#f2b31b; --yellow-ink:#f2c14d; --yellow-tint:#33280b;
-    --on-red:#ffffff; --on-blue:#ffffff; --on-yellow:#141414;
-    --sea:#0a0a0a; --land:#1e1e1d; --coast:#cfcec8; --pref-line:rgba(242,241,236,.16); --rail:#4a4a46;
+    --paper:#171a2b; --surface:#20253c; --sunk:#2a3050;
+    --ink:#efe6cf; --ink-2:#b9b29c; --ink-3:#9a9483;
+    --line:rgba(239,230,207,.13); --line-strong:rgba(239,230,207,.32);
+    --red:#e8502f; --red-deep:#f06a4b; --red-ink:#f2876d; --red-tint:#3a1f24;
+    --blue:#7b91e0; --blue-ink:#9fb0ec; --blue-tint:#222a4d;
+    --yellow:#c9a54a; --yellow-ink:#d8b85e; --yellow-tint:#3a3220;
+    --on-red:#171a2b; --on-blue:#171a2b; --on-yellow:#171a2b;
+    --sea:#121524; --sea-ink:#8a91b5; --land:#262b46; --coast:#5d6694; --pref-line:rgba(239,230,207,.14); --rail:#4a5274; --route:#e8502f;
+    --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.94 0 0 0 0 0.9 0 0 0 0 0.8 0.62 0 0 0 -0.31'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url%28%23n%29'/%3E%3C/svg%3E");
     --stamp-blend:normal; color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
-  --paper:#111110; --surface:#1b1b1a; --sunk:#262624;
-  --ink:#f2f1ec; --ink-2:#b5b4ad; --ink-3:#7e7d77;
-  --line:rgba(242,241,236,.12); --line-strong:rgba(242,241,236,.3);
-  --red:#cc3226; --red-deep:#e04a3d; --red-ink:#ff8d80; --red-tint:#37130f;
-  --blue:#3d6cc6; --blue-ink:#93b2ee; --blue-tint:#142039;
-  --yellow:#f2b31b; --yellow-ink:#f2c14d; --yellow-tint:#33280b;
-  --on-red:#ffffff; --on-blue:#ffffff; --on-yellow:#141414;
-  --sea:#0a0a0a; --land:#1e1e1d; --coast:#cfcec8; --pref-line:rgba(242,241,236,.16); --rail:#4a4a46;
+  --paper:#171a2b; --surface:#20253c; --sunk:#2a3050;
+  --ink:#efe6cf; --ink-2:#b9b29c; --ink-3:#9a9483;
+  --line:rgba(239,230,207,.13); --line-strong:rgba(239,230,207,.32);
+  --red:#e8502f; --red-deep:#f06a4b; --red-ink:#f2876d; --red-tint:#3a1f24;
+  --blue:#7b91e0; --blue-ink:#9fb0ec; --blue-tint:#222a4d;
+  --yellow:#c9a54a; --yellow-ink:#d8b85e; --yellow-tint:#3a3220;
+  --on-red:#171a2b; --on-blue:#171a2b; --on-yellow:#171a2b;
+  --sea:#121524; --sea-ink:#8a91b5; --land:#262b46; --coast:#5d6694; --pref-line:rgba(239,230,207,.14); --rail:#4a5274; --route:#e8502f;
+  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.94 0 0 0 0 0.9 0 0 0 0 0.8 0.62 0 0 0 -0.31'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url%28%23n%29'/%3E%3C/svg%3E");
   --stamp-blend:normal; color-scheme:dark;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;background:var(--paper);color:var(--ink);font:500 15px/1.45 var(--font);-webkit-font-smoothing:antialiased;overflow:hidden}
+body{margin:0;background:var(--grain),var(--paper);color:var(--ink);font:500 15px/1.45 var(--font);-webkit-font-smoothing:antialiased;overflow:hidden}
 button,input,select,textarea{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 ::selection{background:var(--yellow-tint)}
-/* Tabi components. Flat paper, black rules, primary colours that carry meaning:
-   red = where we sleep, blue = what we see and make, yellow = what we eat, ink = how we move. */
+/* Tabi components. Ochre paper, indigo rules, colours from the painting that carry meaning:
+   vermilion (--red) = where we sleep, ultramarine (--blue) = what we see and make,
+   ochre (--yellow) = what we eat, indigo ink = how we move. */
 .num{font-variant-numeric:tabular-nums}
 .ja{font-family:var(--font-ja)}
 svg.i{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
@@ -223,14 +228,14 @@ textarea.input{resize:vertical;min-height:88px;line-height:1.5}
 .rail button[aria-current="true"]{color:var(--ink)}
 .rail button[aria-current="true"]::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--red)}
 .rail .navmap{display:none}
-.panel{min-height:0;min-width:0;display:flex;flex-direction:column;border-right:1.5px solid var(--ink);background:var(--paper)}
+.panel{min-height:0;min-width:0;display:flex;flex-direction:column;border-right:1.5px solid var(--ink);background:var(--grain),var(--paper)}
 .pbody{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
 .sec{padding:18px 18px;border-bottom:1.5px solid var(--line);display:flex;flex-direction:column;gap:12px}
 .sec:last-child{border-bottom:0}
 .sec-h{display:flex;align-items:baseline;gap:10px;justify-content:space-between}
 .vh{padding:20px 18px 6px;display:flex;flex-direction:column;gap:4px}
 .filters{display:flex;gap:6px;flex-wrap:wrap}
-.dayhead{display:flex;align-items:baseline;gap:8px;padding:14px 18px 8px;font:800 14px/1.2 var(--font);position:sticky;top:0;background:var(--paper);z-index:1;border-bottom:1.5px solid var(--ink)}
+.dayhead{display:flex;align-items:baseline;gap:8px;padding:14px 18px 8px;font:800 14px/1.2 var(--font);position:sticky;top:0;background:var(--grain),var(--paper);z-index:1;border-bottom:1.5px solid var(--ink)}
 .dayhead small{font:700 11px/1 var(--font);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
 .dayhead.today{color:var(--blue-ink)}
 .dayhead.today::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--blue);align-self:center}
@@ -357,6 +362,7 @@ textarea.input{resize:vertical;min-height:88px;line-height:1.5}
 #map:active{cursor:grabbing}
 #map.picking{cursor:crosshair}
 #svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.mapgrain{position:absolute;inset:0;pointer-events:none;background:var(--grain)}
 #land{fill:var(--land)}
 #coast{fill:none;stroke:var(--coast);stroke-width:1;vector-effect:non-scaling-stroke;stroke-linejoin:round}
 #borders{fill:none;stroke:var(--pref-line);stroke-width:1;stroke-dasharray:2 3;vector-effect:non-scaling-stroke}
@@ -364,8 +370,9 @@ textarea.input{resize:vertical;min-height:88px;line-height:1.5}
 #rail path{fill:none;stroke:var(--rail);stroke-width:2;vector-effect:non-scaling-stroke}
 #map.no-rail #rail{display:none}
 #route path{fill:none;vector-effect:non-scaling-stroke;stroke-linecap:butt;stroke-linejoin:round}
-#route .done{stroke:var(--ink);stroke-width:3}
-#route .todo{stroke:var(--ink);stroke-width:3;stroke-dasharray:6 6;animation:march 1.4s linear infinite}
+#route .halo{stroke:var(--land);stroke-width:7;stroke-linecap:round;opacity:.9}
+#route .done{stroke:var(--route);stroke-width:3}
+#route .todo{stroke:var(--route);stroke-width:3;stroke-dasharray:6 6;animation:march 1.4s linear infinite}
 @keyframes march{to{stroke-dashoffset:-24}}
 .ov{position:absolute;inset:0;pointer-events:none}
 .lab{position:absolute;left:0;top:0;white-space:nowrap;pointer-events:none}
@@ -373,7 +380,7 @@ textarea.input{resize:vertical;min-height:88px;line-height:1.5}
 .lab.city .in{font:600 11px/1.15 var(--font);color:var(--ink-2);text-shadow:0 0 3px var(--land),0 0 3px var(--land),0 0 3px var(--land)}
 .lab.city .in .ja{display:block;font:500 10px/1.2 var(--font-ja);color:var(--ink-3)}
 .lab.city.r1 .in{font-weight:800;font-size:12px;color:var(--ink)}
-.lab.sea .in{font:600 11px/1.2 var(--font);letter-spacing:.3em;color:var(--ink-3);text-transform:uppercase}
+.lab.sea .in{font:600 11px/1.2 var(--font);letter-spacing:.3em;color:var(--sea-ink);text-transform:uppercase}
 .lab.sea .in .ja{display:block;letter-spacing:.5em;font:500 13px/1.3 var(--font-ja)}
 .lab.pref .in{font:500 12px/1 var(--font-ja);color:color-mix(in srgb,var(--ink) 22%,transparent);letter-spacing:.2em}
 .lab.fuji .in{font:600 10px/1.2 var(--font);color:var(--ink-2)}
@@ -508,10 +515,10 @@ details.more .inner{display:flex;flex-direction:column;gap:12px;margin-top:12px}
 .sugg b{font-weight:700}
 .sugg small{color:var(--ink-2);font-size:12px}
 .confirm{display:flex;gap:8px;align-items:center;font:700 13px/1.2 var(--font)}
-.lightbox{position:fixed;inset:0;z-index:60;background:rgba(10,10,10,.92);display:grid;grid-template-rows:auto minmax(0,1fr) auto;padding:12px max(16px,env(safe-area-inset-left,0px));color:#f2f1ec}
+.lightbox{position:fixed;inset:0;z-index:60;background:rgba(16,18,32,.95);display:grid;grid-template-rows:auto minmax(0,1fr) auto;padding:12px max(16px,env(safe-area-inset-left,0px));color:#efe6cf}
 .lightbox .lh{display:flex;align-items:center;gap:10px}
 .lightbox .lh b{flex:1;font:700 14px/1.3 var(--font)}
-.lightbox .btn{border-color:#f2f1ec;color:#f2f1ec}
+.lightbox .btn{border-color:#efe6cf;color:#efe6cf}
 .lightbox .btn:hover{background:rgba(255,255,255,.12)}
 .lightbox .stage{display:grid;place-items:center;min-height:0;padding:12px 0}
 .lightbox .stage img{max-width:100%;max-height:100%;object-fit:contain}
@@ -630,6 +637,7 @@ details.more .inner{display:flex;flex-direction:column;gap:12px;margin-top:12px}
             <g id="route"></g>
           </g>
         </svg>
+        <div class="mapgrain" aria-hidden="true"></div>
         <div class="ov" id="labels"></div>
         <div class="ov" id="pins"></div>
         <div class="ctl ctl-zoom">

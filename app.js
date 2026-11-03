@@ -243,16 +243,16 @@ const FILTER_KEYS = [['week', 'Next 7 days'], ['all', 'All'], ['stay', 'Stays'],
 const inWeek = p => { const t = today(), w = addDays(t, 7); if (!p.start || p.start > w) return false; return p.kind === 'stay' ? (p.end || addDays(p.start, 1)) > t : p.start >= t; };
 
 /* ---------- people ---------- */
-const PAL = ['#1d4fa3', '#cc3226', '#8a6200', '#141414', '#3d6cc6', '#a8271d'];
+const PAL = ['#2b3b8f', '#c43d22', '#6e5518', '#1b1d2e', '#4b5a6b', '#6d482e'];
 const initialAv = (name, col) => 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="${col}"/><text x="12" y="16.5" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="12" fill="#fff">${(name || '?').trim().charAt(0).toUpperCase().replace(/[<&]/g, '')}</text></svg>`);
-const CLAUDE_AV = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#cc3226"/><path d="M12 4.5 13.4 10.6 19.5 12 13.4 13.4 12 19.5 10.6 13.4 4.5 12 10.6 10.6z" fill="#fff"/></svg>');
+const CLAUDE_AV = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#c43d22"/><path d="M12 4.5 13.4 10.6 19.5 12 13.4 13.4 12 19.5 10.6 13.4 4.5 12 10.6 10.6z" fill="#fff"/></svg>');
 function who(id) {
-  if (id === 'claude') return { name: 'Claude', avatarUrl: CLAUDE_AV, color: '#cc3226' };
-  if (id === 'local') return { name: 'You', avatarUrl: initialAv('Y', '#141414'), color: '#141414' };
-  if (!id) return { name: 'Someone', avatarUrl: initialAv('?', '#8a8a83'), color: '#8a8a83' };
+  if (id === 'claude') return { name: 'Claude', avatarUrl: CLAUDE_AV, color: '#c43d22' };
+  if (id === 'local') return { name: 'You', avatarUrl: initialAv('Y', '#1b1d2e'), color: '#1b1d2e' };
+  if (!id) return { name: 'Someone', avatarUrl: initialAv('?', '#7d786c'), color: '#7d786c' };
   if (id.startsWith('n:')) { const nm = id.slice(2) || 'Someone'; const col = PAL[hash(nm) % PAL.length]; return { name: id === S.meId ? 'You' : nm, avatarUrl: initialAv(nm, col), color: col }; }
   const p = S.profiles[id], isMe = id === S.meId;
-  return { name: isMe ? 'You' : (p && p.name) || 'Someone', avatarUrl: (p && p.avatarUrl) || (isMe && S.me && S.me.avatarUrl) || initialAv('?', '#8a8a83'), color: (p && p.color) || '#8a8a83' };
+  return { name: isMe ? 'You' : (p && p.name) || 'Someone', avatarUrl: (p && p.avatarUrl) || (isMe && S.me && S.me.avatarUrl) || initialAv('?', '#7d786c'), color: (p && p.color) || '#7d786c' };
 }
 function firstName(id) { const n = who(id).name; return n === 'You' ? 'You' : n.split(' ')[0]; }
 let profBusy = false;
@@ -489,6 +489,7 @@ function renderRoute() {
   const t = today(), done = [], todo = [];
   for (let i = 1; i < st.length; i++) (st[i].start <= t ? done : todo).push([[st[i - 1].lng, st[i - 1].lat], [st[i].lng, st[i].lat]]);
   const ml = c => gpath({ type: 'MultiLineString', coordinates: c });
+  r.append('path').attr('class', 'halo').attr('d', ml(done.concat(todo)));
   if (done.length) r.append('path').attr('class', 'done').attr('d', ml(done));
   if (todo.length) r.append('path').attr('class', 'todo').attr('d', ml(todo));
 }
