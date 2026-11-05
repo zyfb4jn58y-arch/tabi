@@ -9,6 +9,8 @@ Tabi (旅, journey) is an offline trip map for two people travelling Japan toget
 - **Spend:** shared expenses in yen or dollars, who paid, and who owes who.
 - **Phrases:** Japanese to show staff and taxi drivers, full screen.
 - **Notes, to-dos and a stamp book** of everywhere you've been.
+- **Add to Tabi:** a bookmark for Safari or Brave (or a Share sheet Shortcut) that reads a booking, ticket or place page and copies it. In Tabi, tap **+** then **Paste from a site** and the dates, times, price, booking reference, address and map location are filled in. Booking email text works too. Set it up from `clip.html`.
+- **Tickets:** attach ticket screenshots (or a PDF in Safari) to a place and show them full screen on white for scanning, even offline.
 
 ## Install on an iPhone
 

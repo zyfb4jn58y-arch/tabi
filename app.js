@@ -1,5 +1,217 @@
 (() => {
 'use strict';
+/* ---------- Add to Tabi: the page reader ----------
+   Used by the Add to Tabi button on a booking site and by the app. It reads structured data (JSON-LD),
+   the page address and the title, and returns plain fields. Booking text is read in the app (clip_text.js),
+   so the button stays small and gets better whenever the app updates. */
+const TPB = (() => {
+  const p2 = n => String(n).padStart(2, '0');
+  const JP = /[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]/;
+  const isoOf = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  const dayMs = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).getTime(); };
+  const num = s => +String(s).replace(/[,\s]/g, '');
+  const HOST_KIND = [[/booking\.com|airbnb|agoda|hotels\.com|expedia|trip\.com\/hotels|jalan|travel\.rakuten|ikyu|hostelworld|japanican|relux/i, 'stay'], [/tabelog|tablecheck|omakase|gurunavi|hotpepper|retty|opentable/i, 'food'], [/smart-ex|eki-net|jr-?(?:west|central|east)|jrpass|japanrailpass|willer|kosokubus|12go|ferry|jal\.co|ana\.co|jetstar|flypeach|zipair|navitime/i, 'move'], [/klook|kkday|viator|getyourguide|teamlab|museum|ticket/i, 'see']];
+  const kindOfHost = h => { for (const [re, k] of HOST_KIND) if (re.test(h || '')) return k; return ''; };
+  const TYPE_KIND = [[/Lodging|Hotel|Hostel|Resort|BedAndBreakfast|Motel|Campground|VacationRental|Accommodation/i, 'stay'], [/Flight|Train|Bus|Boat|Taxi|RentalCar|Trip\b/i, 'move'], [/FoodEstablishment|Restaurant|Cafe|Bar|Bakery/i, 'food'], [/Event|Attraction|Museum|Gallery|Park|Product|Offer|Place|Landmark/i, 'see']];
+  const typeKind = t => { for (const [re, k] of TYPE_KIND) if (re.test(t)) return k; return ''; };
+  const typeOf = o => [].concat(o && o['@type'] || []).join(' ');
+  const dt = v => { const m = /(20\d\d-\d\d-\d\d)(?:[T ](\d\d:\d\d))?/.exec(String(v || '')); return m ? { d: m[1], t: m[2] || '' } : null; };
+  const addr = a => { if (!a) return ''; if (typeof a === 'string') return a; if (Array.isArray(a)) return addr(a[0]); return [a.postalCode, a.addressRegion, a.addressLocality, a.streetAddress].filter(Boolean).join(JP.test(JSON.stringify(a)) ? '' : ', ').trim() || addr(a.address); };
+  const addrEn = a => { if (!a || typeof a !== 'object' || Array.isArray(a)) return addr(a); return [a.streetAddress, a.addressLocality, a.addressRegion, a.postalCode].filter(Boolean).join(', '); };
+  // JSON-LD: reservations first, then places, events and products
+  function fromLD(list) {
+    const r = {}; if (!list || !list.length) return r;
+    const rank = o => /Reservation/.test(typeOf(o)) ? 0 : typeKind(typeOf(o)) === 'stay' ? 1 : /Event|FoodEstablishment|Restaurant/.test(typeOf(o)) ? 2 : 3;
+    const o = list.slice().sort((a, b) => rank(a) - rank(b))[0];
+    const t = typeOf(o), isRes = /Reservation/.test(t), f = isRes ? (o.reservationFor || {}) : o;
+    r.kind = typeKind(t.replace('Reservation', '')) || typeKind(typeOf(f)) || '';
+    const nm = String(f.name || o.name || '').trim(); if (nm) { if (JP.test(nm) && !/[a-z]{3}/i.test(nm)) r.ja = nm; else r.name = nm; }
+    const s = dt(o.checkinTime || o.checkinDate || f.checkinTime || o.startDate || f.startDate || f.departureTime || o.startTime || f.startTime), e = dt(o.checkoutTime || o.checkoutDate || f.checkoutTime || o.endDate || f.endDate);
+    if (s) { r.start = s.d; if (s.t) { if (r.kind === 'stay') r.checkin = s.t; else r.time = s.t; } }
+    if (e) { r.end = e.d; if (e.t && r.kind === 'stay') r.checkout = e.t; }
+    const conf = o.reservationNumber || o.reservationId || o.confirmationNumber || o.orderNumber; if (conf) r.conf = String(conf).slice(0, 40);
+    let pr = o.totalPrice != null ? o.totalPrice : o.price, cur = o.priceCurrency;
+    const off = [].concat(f.offers || o.offers || [])[0];
+    if (pr == null && off) { pr = off.price != null ? off.price : off.lowPrice; cur = off.priceCurrency; }
+    if (pr && typeof pr === 'object') { cur = pr.priceCurrency || cur; pr = pr.price; }
+    const pv = num(pr); if (pv > 0 && /^(JPY|AUD)?$/i.test(cur || '')) { r.price = pv; r.cur = /AUD/i.test(cur) ? 'aud' : 'jpy'; r.total = isRes; }
+    const place = f.location && typeof f.location === 'object' && !Array.isArray(f.location) ? f.location : f;
+    const a = place.address || f.address;
+    if (a) { const ja = addr(a); if (JP.test(ja)) r.addressJa = ja.slice(0, 200); const en = addrEn(a); if (en && !JP.test(en)) r.address = en.slice(0, 200); }
+    const g = place.geo || f.geo || o.geo; if (g && +g.latitude && +g.longitude) { r.lat = +g.latitude; r.lng = +g.longitude; }
+    const tel = place.telephone || f.telephone; if (tel) r.phone = String(tel).slice(0, 40);
+    if (f.departureStation || f.departureAirport || f.departureBoatTerminal) { const from = f.departureStation || f.departureAirport || f.departureBoatTerminal, to = f.arrivalStation || f.arrivalAirport || f.arrivalBoatTerminal; const fn = from && (from.name || from.iataCode), tn = to && (to.name || to.iataCode); if (fn && tn && !r.name) r.name = `${fn} to ${tn}`; }
+    return r;
+  }
+  function coords(s) {
+    const m = /@(-?\d+\.\d+),\s*(-?\d+\.\d+)/.exec(s) || /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/.exec(s) || /[?&](?:q|query|ll|center|daddr|destination|sll)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/i.exec(s);
+    if (!m) return null; const lat = +m[1], lng = +m[2];
+    return lat > 20 && lat < 46.5 && lng > 122 && lng < 154 ? { lat, lng } : null;
+  }
+  // dates and coordinates from a booking site's address (checkin=2026-11-05 and the like)
+  function fromUrl(u) {
+    const r = {}; let url; try { url = new URL(u); } catch (e) { return r; }
+    const q = url.searchParams, get = (...ks) => { for (const k of ks) { const v = q.get(k); if (v) return v; } return ''; };
+    const d = v => { let m = /^(20\d\d)-(\d\d)-(\d\d)/.exec(v); if (m) return `${m[1]}-${m[2]}-${m[3]}`; m = /^(\d{1,2})\/(\d{1,2})\/(20\d\d)$/.exec(v); return m ? `${m[3]}-${p2(m[1])}-${p2(m[2])}` : ''; };
+    const s = d(get('checkin', 'check_in', 'checkIn', 'checkin_date', 'checkInDate', 'arrival', 'arrivalDate', 'chkin', 'startDate', 'start_date', 'date_from', 'date'));
+    let e = d(get('checkout', 'check_out', 'checkOut', 'checkout_date', 'checkOutDate', 'departure', 'departureDate', 'chkout', 'endDate', 'end_date', 'date_to'));
+    if (!s && q.get('checkin_year_month') && q.get('checkin_monthday')) { const ym = q.get('checkin_year_month'), dd = p2(q.get('checkin_monthday')); r.start = `${ym}-${dd}`; }
+    if (s) r.start = s;
+    const los = +get('los', 'nights', 'nflt_los'); if (!e && r.start && los > 0 && los < 60) { const x = new Date(dayMs(r.start)); x.setDate(x.getDate() + los); e = isoOf(x); }
+    if (e) r.end = e;
+    const c = coords(decodeURIComponent(url.href)); if (c) Object.assign(r, c);
+    const pl = /\/maps\/place\/([^/@?]+)/.exec(url.pathname); if (pl) { const n = decodeURIComponent(pl[1].replace(/\+/g, ' ')).trim(); if (JP.test(n) && !/[a-z]{3}/i.test(n)) r.ja = n; else r.name = n; }
+    return r;
+  }
+  const SITE_NAMES = /^(booking\.com|airbnb|agoda|expedia|hotels\.com|trip\.com|klook|kkday|google maps|tripadvisor|tabelog|jalan|rakuten travel|楽天トラベル|じゃらん|viator|getyourguide|hostelworld|instagram|facebook)$/i;
+  // a place name from a page title: drop the site name and price chatter, split Japanese from English
+  function title(t) {
+    const r = {}; t = String(t || '').replace(/\s+/g, ' ').trim(); if (!t) return r;
+    t = t.replace(/\((?:[^)]*?)(?:price|deal|review|updated|rates?|offers?|book|最新)[^)]*\)/gi, '').replace(/\b(?:updated\s+)?(?:20\d\d\s+)?(?:prices|deals|reviews)\b.*$/i, '').replace(/^(?:book|reserve)\s+/i, '').trim().replace(/[\s|–—\-·:,]+$/, '');
+    const parts = t.split(/\s+[|–—\-·:]\s+|\s*[｜]\s*|\s*[【】]\s*/).map(s => s.trim()).filter(s => s && !SITE_NAMES.test(s) && !/^(official site|home|tickets?|booking confirmed|your booking|my bookings?|confirmation|reservation (?:complete|confirmed)|checkout|payment|公式サイト|公式|トップ|ログイン|マイページ|予約完了|予約確認|予約内容(?:の)?確認|ご予約.{0,8}|お申し?込み.{0,6}|完了|確認)$/i.test(s));
+    if (!parts.length) return r;
+    const en = parts.find(s => !JP.test(s)), ja = parts.find(s => JP.test(s) && !/[a-z]{4}/i.test(s));
+    if (en) r.name = en.replace(/,\s*Japan$/i, '').slice(0, 80);
+    if (ja) r.ja = ja.slice(0, 40);
+    if (!r.name && !r.ja) r.name = parts[0].slice(0, 80);
+    return r;
+  }
+  // merge in priority order: earlier sources win for each field
+  function merge(...src) { const out = {}; for (const s of src) if (s) for (const [k, v] of Object.entries(s)) if (out[k] == null || out[k] === '') out[k] = v; return out; }
+  const encode = rec => `Add to Tabi: ${rec.name || rec.ja || 'a place'}\ntabi:1:${JSON.stringify(rec)}`;
+  function decode(text) { const m = /tabi:1:(\{[\s\S]*\})/.exec(String(text || '')); if (!m) return null; try { const o = JSON.parse(m[1]); return o && typeof o === 'object' ? o : null; } catch (e) { return null; } }
+  return { fromLD, fromUrl, title, coords, merge, encode, decode, kindOfHost, JP, p2, num, isoOf, dayMs };
+})();
+
+/* ---------- booking text reader (app only) ----------
+   Reads an email, a confirmation page or a selection: dates, times, the total, the booking reference,
+   phone and address. `loose` allows unlabelled guesses, for text the person chose to paste or select. */
+const TP = (() => {
+  const { JP, p2, num, isoOf, dayMs, kindOfHost } = TPB;
+  const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  const okDate = (y, m, d) => m >= 1 && m <= 12 && d >= 1 && d <= 31;
+  const MONTHS = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+  const DATE_RES = [
+    [/(20\d\d)\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?/g, m => [+m[1], +m[2], +m[3]]],
+    [new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTHS}\\b\\.?,?(?:\\s+(20\\d\\d))?`, 'gi'), m => [m[3] ? +m[3] : 0, MON[m[2].slice(0, 3).toLowerCase()], +m[1]]],
+    [new RegExp(`\\b${MONTHS}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b,?(?:\\s+(20\\d\\d))?`, 'gi'), m => [m[3] ? +m[3] : 0, MON[m[1].slice(0, 3).toLowerCase()], +m[2]]],
+    [/(?<![\d年])(\d{1,2})\s*月\s*(\d{1,2})\s*日/g, m => [0, +m[1], +m[2]]]
+  ];
+  // every date in the text, in order, with its position; yearless dates take the year nearest the reference day
+  function dates(text, ref) {
+    const hits = [];
+    for (const [re, f] of DATE_RES) { re.lastIndex = 0; let m; while ((m = re.exec(text))) { const [y, mo, d] = f(m); if (okDate(y || 2000, mo, d)) hits.push({ i: m.index, end: m.index + m[0].length, y, m: mo, d }); } }
+    hits.sort((a, b) => a.i - b.i || b.end - a.end);
+    const out = []; let last = -1;
+    for (const h of hits) { if (h.i < last) continue; last = h.end; out.push(h); }
+    const r = ref ? dayMs(ref) : Date.now(), ry = new Date(r).getFullYear();
+    for (const h of out) {
+      let y = h.y;
+      if (!y) { let best = Infinity; for (const c of [ry - 1, ry, ry + 1]) { const dd = Math.abs(new Date(c, h.m - 1, h.d).getTime() - r); if (dd < best) { best = dd; y = c; } } }
+      h.iso = `${y}-${p2(h.m)}-${p2(h.d)}`;
+    }
+    return out;
+  }
+  const TIME = /(?<![\d:])([01]?\d|2[0-3])[:：]([0-5]\d)(?!\d)\s*([ap]\.?m\.?)?/i;
+  const to24 = m => { let h = +m[1]; const ap = (m[3] || '').toLowerCase(); if (ap.startsWith('p') && h < 12) h += 12; if (ap.startsWith('a') && h === 12) h = 0; return `${p2(h)}:${m[2]}`; };
+  // first time within `span` characters after a label
+  function timeAfter(text, label, span = 70, not = null) {
+    const re = new RegExp(label, 'gi'); let m;
+    while ((m = re.exec(text))) {
+      const sl = text.slice(m.index + m[0].length, m.index + m[0].length + span);
+      if (not !== null) { const by = new RegExp('(?:until|by|before|まで)\\s*' + TIME.source, 'i').exec(sl); if (by) return to24(by); }
+      const all = [...sl.matchAll(new RegExp(TIME.source, 'gi'))].map(to24).filter(t => t !== not); if (all.length) return all[0];
+    }
+    return '';
+  }
+  function dateAfter(ds, text, label, span = 60) {
+    const re = new RegExp(label, 'gi'); let m;
+    while ((m = re.exec(text))) { const from = m.index + m[0].length; const d = ds.find(h => h.i >= from && h.i - from <= span); if (d) return d.iso; }
+    return '';
+  }
+  const AMOUNT = [
+    [/(?:¥|￥|JPY)\s?(\d{1,3}(?:,\d{3})+|\d+)(?![\d.])/gi, 'jpy'],
+    [/(\d{1,3}(?:,\d{3})+|\d{3,})\s?(?:円|JPY|yen)\b/gi, 'jpy'],
+    [/(\d{1,3}(?:,\d{3})+|\d{3,})\s?円/g, 'jpy'],
+    [/(?:A\$|AU\$|AUD)\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/gi, 'aud'],
+    [/(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)\s?AUD\b/gi, 'aud'],
+    [/(?<![A-Za-z])\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/g, 'aud']
+  ];
+  function amounts(text) {
+    const out = [];
+    for (const [re, cur] of AMOUNT) { re.lastIndex = 0; let m; while ((m = re.exec(text))) { const v = num(m[1]); if (v > 0 && !out.some(o => Math.abs(o.i - m.index) < 4)) out.push({ i: m.index, v, cur }); } }
+    return out.sort((a, b) => a.i - b.i);
+  }
+  const TOTAL = '(?:grand total|total price|total cost|total amount|total|amount paid|you paid|you\'ll pay|charged|price for \\d+ nights?|合計|お支払い金額|料金合計|支払金額)';
+  function price(text, loose) {
+    const all = amounts(text); if (!all.length) return null;
+    const re = new RegExp(TOTAL, 'gi'); let m;
+    while ((m = re.exec(text))) { const from = m.index + m[0].length; const a = all.find(x => x.i >= from && x.i - from <= 60); if (a) return { price: a.v, cur: a.cur, total: true }; }
+    if (!loose) return null;
+    const pick = (all.filter(a => a.cur === 'jpy').length ? all.filter(a => a.cur === 'jpy') : all).reduce((a, b) => (b.v > a.v ? b : a));
+    return { price: pick.v, cur: pick.cur, total: true };
+  }
+  const REF_RE = [
+    /(?:booking|confirmation|reservation|order|itinerary|ticket|reference)\s*(?:number|no\.?|code|id|ref(?:erence)?)?\s*[:：#]\s*([A-Z0-9][A-Z0-9.\-]{2,28}[A-Z0-9])/gi,
+    /(?:booking|confirmation|reservation|order|itinerary)\s+(?:number|no\.?|code|id|ref(?:erence)?)\s*[:：#]?\s*([A-Z0-9][A-Z0-9.\-]{2,28}[A-Z0-9])/gi,
+    /(?:予約番号|確認番号|予約ID|予約コード|申込番号)\s*[:：]?\s*([A-Za-z0-9][A-Za-z0-9\-]{2,28})/g
+  ];
+  function ref(text) {
+    for (const re of REF_RE) { re.lastIndex = 0; let m; while ((m = re.exec(text))) if (/\d/.test(m[1])) { const pin = /\bPIN(?:\s*code)?\s*[:：]?\s*(\d{3,8})\b/i.exec(text); return m[1] + (pin ? ' · PIN ' + pin[1] : ''); } }
+    return '';
+  }
+  function phone(text) { const m = /(?:tel(?:ephone)?|phone|電話番号|電話)\.?\s*[:：]?\s*(\+?\d[\d\s()\-]{7,18}\d)/i.exec(text); return m ? m[1].replace(/\s+/g, ' ').trim() : ''; }
+  function address(text) {
+    const out = {};
+    const re = /(?:^|\n)\s*(?:address|住所|所在地)\s*[:：]?\s*([^\n]{6,160})/gi; let m;
+    while ((m = re.exec(text))) { const v = m[1].trim(); if (JP.test(v)) { if (!out.addressJa) out.addressJa = v; } else if (!out.address && /\d|,/.test(v)) out.address = v; }
+    if (!out.addressJa) { const j = /〒\s?\d{3}-?\d{4}\s*([^\n]{6,80})/.exec(text); if (j && JP.test(j[1])) out.addressJa = j[0].replace(/\s+/g, ' ').trim(); }
+    return out;
+  }
+  const KIND_WORDS = [
+    ['stay', /\b(hotel|ryokan|hostel|guest ?house|inn|resort|minshuku|apartment|lodg\w*|check[\s-]?in|check[\s-]?out|nights?\b|room type|airbnb|booking\.com|agoda)|宿|旅館|ホテル|チェックイン/i],
+    ['move', /\b(train|shinkansen|ferry|flight|airline|bus|coach|seat \w+|car \d|platform|departure|boarding|rail ?pass|jr )|新幹線|乗車|フェリー|航空/i],
+    ['food', /\b(restaurant|izakaya|dinner|lunch|breakfast reservation|table for|omakase|course menu|tabelog|tablecheck|caf[eé])|レストラン|予約席|食事/i],
+    ['see', /\b(ticket|admission|museum|gallery|exhibition|entry|tour|teamlab|garden|temple|shrine|klook|kkday|viator|getyourguide)|入場|美術館|チケット/i]
+  ];
+  function kindOf(text, host) {
+    const hk = kindOfHost(host); if (hk) return hk;
+    let best = '', score = 0;
+    for (const [k, re] of KIND_WORDS) { const n = (String(text).match(new RegExp(re.source, 'gi')) || []).length; if (n > score) { score = n; best = k; } }
+    return best;
+  }
+  function labelled(text) {
+    const m = /(?:^|\n)\s*(?:property|hotel|accommodation|venue|restaurant|attraction|activity|event|宿泊施設|施設名|店名)\s*(?:name)?\s*[:：]\s*([^\n]{3,80})/i.exec(text);
+    return m ? m[1].trim() : '';
+  }
+  // booking text: an email, a confirmation page or a selection. `loose` allows unlabelled guesses.
+  function fromText(text, { refDay, loose } = {}) {
+    const r = {}; text = String(text || '').replace(/\r/g, '').replace(/[ \t\u00a0]+/g, ' ');
+    if (!text.trim()) return r;
+    const ds = dates(text, refDay);
+    r.kind = kindOf(text);
+    const IN = '(?:check[\\s-]?in(?:\\s*date)?|arrival(?:\\s*date)?|arriving|チェックイン(?:日)?|到着日)', OUT = '(?:check[\\s-]?out(?:\\s*date)?|departure date|departing|チェックアウト(?:日)?)';
+    let s = dateAfter(ds, text, IN), e = dateAfter(ds, text, OUT);
+    if (!s) for (let i = 0; i + 1 < ds.length; i++) { const between = text.slice(ds[i].end, ds[i + 1].i); if (/^[\s,]*(?:[-–—~〜]|to|until|thru|through)[\s,]*(?:(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s*)?(?:\([^)]{1,4}\)\s*)?$/i.test(between)) { s = ds[i].iso; e = e || ds[i + 1].iso; break; } }
+    if (!s) s = dateAfter(ds, text, '(?:date|departure|departs?|visit(?:ing)?\\s*date|valid(?:\\s*on)?|admission|entry|reservation\\s*date|日時|日付|乗車日|利用日|来店日|入場日)');
+    if (!s && loose && ds.length) s = ds[0].iso;
+    if (s) r.start = s; if (e && (!s || e > s)) r.end = e;
+    if (s && !r.end) { const a = ds.find(h => h.iso === s); const b = a && ds.find(h => h.i > a.i && h.i - a.end < 120 && h.iso > s); if (b && (r.kind === 'stay' || new RegExp(OUT, 'i').test(text))) r.end = b.iso; }
+    r.checkin = timeAfter(text, IN + '(?:\\s*time)?'); r.checkout = timeAfter(text, OUT + '(?:\\s*time)?', 90, r.checkin || '');
+    r.time = timeAfter(text, '(?:depart(?:s|ure)?(?:\\s*time)?|dep\\.|leaves?|boarding|start(?:s|ing)?(?:\\s*time)?|entry\\s*time|time\\s*slot|reservation\\s*time|発車|出発|開始|入場時間|来店時間)', 50);
+    if (!r.time && loose) { const t = TIME.exec(text); if (t) r.time = to24(t); }
+    Object.assign(r, price(text, loose) || {});
+    r.conf = ref(text); r.phone = phone(text); Object.assign(r, address(text));
+    const nm = labelled(text); if (nm) { if (JP.test(nm) && !/[a-z]{3}/i.test(nm)) r.ja = nm; else r.name = nm; }
+    // a journey written as A → B names a travel leg
+    if (!nm) { const rt = /(?:^|[\s:：])((?:[^\s→⇒>\d:：]{2,20} ){0,2}[^\s→⇒>\d:：]{2,24})\s*(?:→|⇒|->|＞)\s*([^\s→⇒>\d]{2,24}(?:\s[^\s→⇒>\d]{2,12})?)/.exec(text); if (rt) { const v = `${rt[1]} → ${rt[2]}`; if (JP.test(v)) r.ja = v.slice(0, 40); else r.name = v.replace(' → ', ' to ').slice(0, 80); if (!r.kind) r.kind = 'move'; } }
+    r.dates = ds.map(h => h.iso).filter((v, i, a) => a.indexOf(v) === i).slice(0, 12);
+    for (const k of Object.keys(r)) if (r[k] === '' || r[k] == null) delete r[k];
+    return r;
+  }
+  return Object.assign({}, TPB, { dates, fromText, kindOf });
+})();
+
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -10,6 +222,7 @@ const hash = s => { let h = 2166136261; for (const c of String(s)) { h ^= c.code
 const PWA = !!window.TABI_PWA;
 const DEFAULTS = null;
 const isPhone = () => innerWidth <= 820;
+const CLIP_PAGE = 'https://zyfb4jn58y-arch.github.io/tabi/clip.html';
 
 /* ---------- dates ---------- */
 const pad = n => String(n).padStart(2, '0');
@@ -182,7 +395,7 @@ function norm(id, d) {
   const kind = KINDS[d.kind] ? d.kind : 'see', title = str(d.name).trim();
   const photos = [];
   if (d.photos && typeof d.photos === 'object') for (const [k, v] of Object.entries(d.photos)) {
-    if (v && typeof v === 'object' && (typeof v.a === 'string' || typeof v.d === 'string')) photos.push({ key: k, a: v.a || '', d: v.d || '', by: str(v.by), at: numv(v.at) || 0 });
+    if (v && typeof v === 'object' && (typeof v.a === 'string' || typeof v.d === 'string')) photos.push({ key: k, a: v.a || '', d: v.d || '', t: v.t === 1 || v.t === true, by: str(v.by), at: numv(v.at) || 0 });
   }
   photos.sort((a, b) => a.at - b.at);
   const likes = {}; if (d.likes && typeof d.likes === 'object') for (const [k, v] of Object.entries(d.likes)) if (v === true) likes[k] = true;
@@ -337,6 +550,8 @@ async function saveSettings(partial) {
   try { await enqueue('trip/settings', () => db.doc('trip/settings').set(next)); return true; } catch (e) { writeErr(e); return false; }
 }
 const newId = (p = 'p') => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const ticketsOf = p => p ? p.photos.filter(f => f.t) : [];
+const picsOf = p => p ? p.photos.filter(f => !f.t) : [];
 function canEdit() { return S.mode !== 'loading' && S.canWrite !== false; }
 let toastT = null;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 3400); }
@@ -418,7 +633,7 @@ function renderPins() {
     if (!hasLoc(p)) continue;
     keep.add(p.id);
     let el = pinEls.get(p.id);
-    const f0 = p.photos[0], src = f0 ? photoSrc(f0) : '';
+    const f0 = picsOf(p)[0], src = f0 ? photoSrc(f0) : '';
     const n = p.kind === 'stay' ? cs.get(p.id) : null;
     const sig = JSON.stringify([p.name, p.kind, p.status, n, src.length, src.slice(0, 40)]);
     if (!el) { el = document.createElement('button'); el.type = 'button'; el.dataset.id = p.id; pinsEl.appendChild(el); pinEls.set(p.id, el); }
@@ -623,7 +838,7 @@ function renderPanel() {
   body.scrollTop = keep;
 }
 function thumbHTML(p, n) {
-  const f = p.photos[0]; const src = f ? photoSrc(f) : '';
+  const f = picsOf(p)[0]; const src = f ? photoSrc(f) : '';
   return `<span class="thumb">${src ? `<img src="${esc(src)}" alt="" loading="lazy">` : glyph(p.kind, { status: p.status })}${n ? `<span class="n num">${n}</span>` : ''}</span>`;
 }
 function rowHTML(p, cs) {
@@ -654,7 +869,7 @@ function todayHTML() {
     tonight = `<div class="block red"><div class="sec-h"><span class="label">Tonight</span><span class="chip ${night.status}">${statusLabel(night)}</span></div>
       <div class="h-head">${esc(night.name)}</div><div class="muted" style="font-size:13px">Night ${ni} of ${nn}${out ? ' · ' + out : ''}${night.start === t && night.checkin ? ` · check-in from ${fmtTime(night.checkin)}` : ''}</div>
       ${night.address ? `<div style="font-size:13px">${esc(night.address)}</div>` : ''}
-      <div class="acts">${night.addressJa || night.address ? `<button class="btn btn-sm" type="button" data-showaddr="${esc(night.id)}">${icon('car')}Show to driver</button>` : ''}${hasLoc(night) ? `<a class="btn btn-sm" href="${esc(gmaps(night))}" target="_blank" rel="noopener">${icon('map')}Directions</a>` : ''}<button class="btn btn-sm btn-ghost" type="button" data-id="${esc(night.id)}">Details</button></div></div>`;
+      <div class="acts">${night.addressJa || night.address ? `<button class="btn btn-sm" type="button" data-showaddr="${esc(night.id)}">${icon('car')}Show to driver</button>` : ''}${ticketsOf(night).length ? `<button class="btn btn-sm" type="button" data-ticket="${esc(night.id)}">${icon('ticket')}Ticket</button>` : ''}${hasLoc(night) ? `<a class="btn btn-sm" href="${esc(gmaps(night))}" target="_blank" rel="noopener">${icon('map')}Directions</a>` : ''}<button class="btn btn-sm btn-ghost" type="button" data-id="${esc(night.id)}">Details</button></div></div>`;
   } else if (during && t < TRIP.end) {
     tonight = `<div class="block red"><span class="label">Tonight</span><div class="h-head">Nowhere to sleep yet</div>${canEdit() ? `<div class="acts"><button class="btn btn-sm btn-red" type="button" data-gap="${t}|${tm}">${icon('plus')}Add tonight's stay</button></div>` : ''}</div>`;
   } else tonight = '';
@@ -669,7 +884,7 @@ function todayHTML() {
     const when = sameDay ? (m != null ? untilText(m - now) : 'later today') : dd === 1 ? 'tomorrow' : `in ${dd} days`;
     next = `<div class="block blue" data-id="${esc(nx.id)}" style="cursor:pointer"><div class="sec-h"><span class="label">Next up</span><span class="label" style="color:var(--blue-ink)">${esc(when)}</span></div>
       <div style="display:flex;gap:12px;align-items:center">${glyph(nx.kind, { status: nx.status, cls: 'g' }).replace('class="g"', 'class="g" style="width:28px;height:28px"')}<div style="min-width:0"><div class="next-time num">${nx.time ? fmtTime(nx.time) : fmtDay(nx.start)}</div><div class="h-head" style="margin-top:4px">${esc(nx.name)}</div></div></div>
-      ${nx.notes ? `<div class="muted" style="font-size:13px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(nx.notes)}</div>` : ''}</div>`;
+      ${nx.notes ? `<div class="muted" style="font-size:13px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(nx.notes)}</div>` : ''}${ticketsOf(nx).length ? `<div class="acts"><button class="btn btn-sm" type="button" data-ticket="${esc(nx.id)}">${icon('ticket')}Show ticket</button>${nx.conf ? `<span class="fine" style="align-self:center">Ref ${esc(nx.conf)}</span>` : ''}</div>` : ''}</div>`;
   }
   const tl = (list) => list.length ? `<div class="timeline">${list.map(p => `<button class="tl" type="button" data-id="${esc(p.id)}"><span class="tt">${p.time ? fmtTime(p.time) : p.kind === 'stay' ? 'Stay' : 'Any time'}</span>${glyph(p.kind, { status: p.status })}<span><span class="tn">${esc(p.name)}</span><span class="tm">${esc(KINDS[p.kind].label)}${p.kind === 'stay' && p.checkin ? ' · check-in from ' + fmtTime(p.checkin) : ''}</span></span></button>`).join('')}</div>` : '';
   const todayList = dayItems(t), tmList = dayItems(tm);
@@ -816,6 +1031,7 @@ function moreHTML() {
     item('notes', 'Notes and maybes', glyph('note'), `${n.filter(p => p.kind === 'note').length} notes`) +
     item('stamps', 'Stamps', glyph('see'), `${n.filter(p => p.visited).length} stamped`) +
     item('phrases', 'Phrases', glyph('food'), 'Japanese to show staff and drivers') +
+    (canEdit() ? `<div class="sec"><span class="label">Add from websites</span><div class="acts"><button class="btn" type="button" data-paste>${icon('clip')}Paste from a site or email</button><a class="btn" href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener">${icon('link')}Set up the Add to Tabi button</a></div><div class="fine">On a booking or ticket page in Safari or Brave, tap your Add to Tabi bookmark, then come back here and paste. Add ticket screenshots from a place's card.</div></div>` : '') +
     (PWA ? `<div class="sec"><span class="label">This phone</span><div class="acts"><button class="btn" type="button" data-act="share">${icon('share')}Share trip file</button><label class="btn">${icon('upload')}Import trip file<input type="file" class="tripImport" accept=".json,application/json" hidden></label><button class="btn" type="button" data-act="settings">${icon('settings')}Trip settings</button></div><div class="fine">Each phone keeps its own copy. To sync, share your trip file and import it on the other phone. The newest change wins.</div></div>` : '');
 }
 
@@ -829,6 +1045,8 @@ $('#pbody').addEventListener('click', async e => {
   const g = t.closest('[data-gap]'); if (g) { const [a, b] = g.dataset.gap.split('|'); openDialog({ kind: 'stay', status: 'planned', start: a, end: b }); return; }
   const ad = t.closest('[data-addday]'); if (ad) { openDialog({ kind: 'see', status: 'planned', start: ad.dataset.addday }); return; }
   const sa = t.closest('[data-showaddr]'); if (sa) { showAddress(S.places.get(sa.dataset.showaddr)); return; }
+  const tkt = t.closest('[data-ticket]'); if (tkt) { const p = S.places.get(tkt.dataset.ticket); if (p) openTicket(p, 0); return; }
+  if (t.closest('[data-paste]')) { addFromSite(); return; }
   const ph = t.closest('[data-phrase]'); if (ph) { const [en, jp, ro] = PH_FLAT[+ph.dataset.phrase]; openShow({ label: en, jp, sub: ro, kc: 'var(--blue)' }); return; }
   const tk = t.closest('[data-tick]'); if (tk) { const p = S.places.get(tk.dataset.tick); if (p) await patch('places', p.id, { done: !p.done }, p.done ? 'reopened' : 'ticked off'); return; }
   const dx = t.closest('[data-delx]'); if (dx) {
@@ -876,12 +1094,12 @@ async function quickNote(pin) {
 
 /* show to someone */
 function openShow({ label, jp, sub, kc }) {
-  const el = $('#show');
+  const el = $('#show'); el.classList.remove('ticket');
   el.innerHTML = `<div class="bar"><span class="label">${esc(label)}</span><button class="iconbtn" type="button" id="showX" aria-label="Close">${icon('x')}</button></div><div class="main"><div class="accent" style="--kc:${kc || 'var(--red)'}"></div><div class="jp" lang="ja">${esc(jp)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>`;
   el.hidden = false; $('#showX').focus();
   try { navigator.wakeLock && navigator.wakeLock.request('screen').then(l => { el._lock = l; }).catch(() => {}); } catch (e) {}
 }
-function closeShow() { const el = $('#show'); el.hidden = true; if (el._lock) { el._lock.release().catch(() => {}); el._lock = null; } }
+function closeShow() { const el = $('#show'); el.hidden = true; el.classList.remove('ticket'); if (el._lock) { el._lock.release().catch(() => {}); el._lock = null; } }
 $('#show').addEventListener('click', e => { if (e.target.closest('#showX')) closeShow(); });
 function showAddress(p) {
   if (!p) return;
@@ -939,10 +1157,12 @@ function renderCard() {
   else if (p.priceNote) price = `<div class="price"><span class="note" style="margin:0">${esc(p.priceNote)}</span></div>`;
   const copy = (v, label) => `<button class="copyable" type="button" data-copy="${esc(v)}" aria-label="Copy ${esc(label)}">${esc(v)}${icon('copy')}</button>`;
   const hasWallet = p.conf || p.checkin || p.checkout || p.address || p.addressJa || p.phone;
-  const wallet = hasWallet ? `<div class="wallet"><div class="wh"><span class="label">Booking</span>${p.addressJa || p.address ? `<button class="btn btn-sm" type="button" id="driverBtn">${icon('car')}Show to driver</button>` : ''}</div><div class="wb"><dl class="kv">
+  const tix = ticketsOf(p), pics = picsOf(p), canTix = editable && p.kind !== 'note';
+  const tixRow = tix.length || (hasWallet && canTix) ? `<div class="tix">${tix.map((f, j) => { const src = photoSrc(f); return `<button type="button" data-tix="${j}" aria-label="Show ticket ${j + 1}">${src ? `<img src="${esc(src)}" alt="">` : ''}</button>`; }).join('')}${canTix ? `<button class="tadd" type="button" id="addTicket">${icon('ticket')}<span>Add ticket</span></button>` : ''}</div>` : '';
+  const wallet = hasWallet || tix.length ? `<div class="wallet"><div class="wh"><span class="label">${hasWallet ? 'Booking' : 'Tickets'}</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${tix.length ? `<button class="btn btn-sm" type="button" data-tix="0">${icon('ticket')}Show ticket</button>` : ''}${p.addressJa || p.address ? `<button class="btn btn-sm" type="button" id="driverBtn">${icon('car')}Show to driver</button>` : ''}</span></div><div class="wb">${hasWallet ? `<dl class="kv">
       ${p.conf ? `<dt>Ref</dt><dd>${copy(p.conf, 'booking reference')}</dd>` : ''}${p.checkin ? `<dt>Check-in</dt><dd>from ${fmtTime(p.checkin)}</dd>` : ''}${p.checkout ? `<dt>Check-out</dt><dd>by ${fmtTime(p.checkout)}</dd>` : ''}
-      ${p.address ? `<dt>Address</dt><dd>${copy(p.address, 'address')}</dd>` : ''}${p.addressJa ? `<dt>住所</dt><dd class="ja">${copy(p.addressJa, 'Japanese address')}</dd>` : ''}${p.phone ? `<dt>Phone</dt><dd>${copy(p.phone, 'phone number')}</dd>` : ''}</dl></div></div>` : '';
-  const photos = p.photos.map((f, j) => { const src = photoSrc(f); return src ? `<button class="ph" type="button" data-ph="${j}" aria-label="Open photo ${j + 1}"><img src="${esc(src)}" alt="" loading="lazy" decoding="async"></button>` : ''; }).join('');
+      ${p.address ? `<dt>Address</dt><dd>${copy(p.address, 'address')}</dd>` : ''}${p.addressJa ? `<dt>住所</dt><dd class="ja">${copy(p.addressJa, 'Japanese address')}</dd>` : ''}${p.phone ? `<dt>Phone</dt><dd>${copy(p.phone, 'phone number')}</dd>` : ''}</dl>` : ''}${tixRow}</div></div>` : '';
+  const photos = pics.map((f, j) => { const src = photoSrc(f); return src ? `<button class="ph" type="button" data-ph="${j}" aria-label="Open photo ${j + 1}"><img src="${esc(src)}" alt="" loading="lazy" decoding="async"></button>` : ''; }).join('');
   const addPh = editable ? `<button class="ph add" type="button" id="addPhoto">${icon('camera')}<span>Add photos</span></button>` : '';
   let ideas = '';
   if (S.ideas && S.ideas.for === p.id) {
@@ -970,6 +1190,7 @@ function renderCard() {
       <button class="btn btn-sm love ${iLike ? 'on' : ''}" type="button" id="loveBtn" ${editable ? '' : 'disabled'} aria-pressed="${iLike}">${icon('heart')}${iLike ? 'Loved' : 'Love it'}${likers.length ? `<span class="likers">${likers.slice(0, 3).map(id => `<img src="${esc(who(id).avatarUrl)}" alt="${esc(firstName(id))}">`).join('')}</span>` : ''}</button>
       ${editable && p.kind !== 'note' ? `<button class="btn btn-sm ${p.visited ? 'on' : ''}" type="button" id="stampBtn">${icon('stamp')}${p.visited ? 'Stamped' : "We've been here"}</button>` : ''}
       ${hasLoc(p) ? `<a class="btn btn-sm" href="${esc(gmaps(p))}" target="_blank" rel="noopener">${icon('map')}Google Maps</a>` : ''}
+      ${canTix && !hasWallet && !tix.length ? `<button class="btn btn-sm" type="button" id="addTicket">${icon('ticket')}Add ticket</button>` : ''}
       ${p.links.map(l => `<a class="btn btn-sm" href="${esc(l.url)}" target="_blank" rel="noopener">${icon('link')}${esc(l.label)}</a>`).join('')}
       ${sample && hasLoc(p) && editable ? `<button class="btn btn-sm" type="button" id="ideasBtn">${icon('spark')}Ideas nearby</button>` : ''}
     </div>
@@ -988,7 +1209,9 @@ $('#card').addEventListener('click', async e => {
   if (t.closest('#driverBtn')) { showAddress(p); return; }
   const cp = t.closest('[data-copy]'); if (cp) { const v = cp.dataset.copy; try { await navigator.clipboard.writeText(v); toast('Copied'); } catch (er) { const r = document.createRange(); r.selectNodeContents(cp); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast('Selected. Copy it from the menu.'); } return; }
   if (t.closest('#moveBtn')) { startPick(`Tap the map where ${p.name} should go`, ll => patch('places', p.id, { lat: +ll[1].toFixed(5), lng: +ll[0].toFixed(5) }, 'moved')); return; }
-  if (t.closest('#addPhoto')) { photoTarget = p.id; $('#photoInput').click(); return; }
+  if (t.closest('#addPhoto')) { photoTarget = p.id; ticketMode = false; $('#photoInput').accept = 'image/*'; $('#photoInput').click(); return; }
+  if (t.closest('#addTicket')) { photoTarget = p.id; ticketMode = true; $('#photoInput').accept = 'image/*,application/pdf'; $('#photoInput').click(); return; }
+  const tx = t.closest('[data-tix]'); if (tx) { openTicket(p, +tx.dataset.tix); return; }
   const ph = t.closest('[data-ph]'); if (ph) { openLightbox(p.id, +ph.dataset.ph); return; }
   if (t.closest('#loveBtn')) { const me = S.meId || 'local'; const on = !p.likes[me]; await patch('places', p.id, { likes: { [me]: on } }, on ? 'loved' : 'edited'); return; }
   if (t.closest('#stampBtn')) { if (p.visited) { await patch('places', p.id, { visited: '' }, 'removed the stamp from'); return; } justStamped = p.id; await patch('places', p.id, { visited: today() }, 'stamped'); return; }
@@ -1032,6 +1255,7 @@ function openDialog(p) {
   F.links.value = (p.links || []).map(l => `${l.label} | ${l.url}`).join('\n');
   $('#fMore').open = !!(p.conf || p.address || p.addressJa || p.phone || (p.links && p.links.length) || (p.kind === 'stay' && isNew));
   F.sugg.hidden = true; syncWhere();
+  $('#fPasteBox').hidden = true; $('#fPasteBox').value = ''; pasteNote('');
   $('#fDel').hidden = isNew; $('#fConfirm').hidden = true;
   F.scrim.hidden = false;
   setTimeout(() => (isNew && !F.name.value ? F.name : F.notes).focus(), 30);
@@ -1117,42 +1341,49 @@ document.addEventListener('keydown', e => {
   if (S.sel) deselect();
 });
 
-/* ---------- photos ---------- */
-let photoTarget = null;
+/* ---------- photos and tickets ---------- */
+let photoTarget = null, ticketMode = false;
 $('#photoInput').addEventListener('change', async e => {
-  const files = [...e.target.files].filter(f => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|heic)$/i.test(f.name)); e.target.value = '';
+  const tk = ticketMode; ticketMode = false;
+  const files = [...e.target.files].filter(f => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|heic)$/i.test(f.name) || (tk && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)))); e.target.value = '';
   const id = photoTarget; photoTarget = null; if (!id || !files.length) return;
-  const btn = $('#addPhoto'); if (btn) btn.classList.add('busy');
+  const btn = $(tk ? '#addTicket' : '#addPhoto'); if (btn) btn.classList.add('busy');
   let added = 0;
   for (const f of files.slice(0, 8)) {
+    const pdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
     try {
       const useAssets = assets && S.mode === 'shared';
-      const blob = await shrink(f, useAssets ? 1600 : 1280, useAssets ? 0.84 : 0.8);
-      const key = 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      const big = tk ? (useAssets ? 2000 : 1600) : (useAssets ? 1600 : 1280), q = tk ? 0.9 : (useAssets ? 0.84 : 0.8);
+      const blob = await shrink(f, big, q, pdf);
+      const key = (tk ? 't' : 'f') + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
       let rec;
       if (useAssets) { const r = await assets.upload(blob); rec = { a: r.id, by: S.meId, at: Date.now() }; }
       else {
-        const small = S.mode === 'local' ? blob : await shrink(f, 720, 0.72);
+        const small = S.mode === 'local' ? blob : await shrink(f, tk ? 1200 : 720, tk ? 0.85 : 0.72, pdf);
         const data = await blobToData(small); const pid = 'ph' + key;
         if (S.mode === 'local') await idb.set(pid, { data, place: id });
         else await enqueue('photos/' + pid, () => db.doc('photos/' + pid).set({ data, place: id, by: S.meId }));
         S.photos.set(pid, { data, place: id }); rec = { d: pid, by: S.meId || 'local', at: Date.now() };
       }
-      await patch('places', id, { photos: { [key]: rec } }, 'added a photo to'); added++;
+      if (tk) rec.t = 1;
+      await patch('places', id, { photos: { [key]: rec } }, tk ? 'added a ticket to' : 'added a photo to'); added++;
     } catch (er) {
-      toast(er && er.code === 'quota_exceeded' ? 'No room for more photos. Delete a few first.' : /heic/i.test(f.name) ? 'That photo is HEIC. Try a JPEG or PNG.' : "A photo couldn't be added. Try a smaller JPEG or PNG.");
+      toast(er && er.code === 'quota_exceeded' ? 'No room for more. Delete a few photos first.' : pdf ? "That PDF couldn't be read here. Take a screenshot of the ticket and add that instead." : /heic/i.test(f.name) ? 'That photo is HEIC. Try a JPEG or PNG.' : "That image couldn't be added. Try a smaller JPEG or PNG.");
     }
   }
-  const b2 = $('#addPhoto'); if (b2) b2.classList.remove('busy');
-  if (added) toast(added === 1 ? 'Photo added' : `${added} photos added`);
+  const b2 = $(tk ? '#addTicket' : '#addPhoto'); if (b2) b2.classList.remove('busy');
+  if (added) toast(tk ? (added === 1 ? 'Ticket added' : `${added} tickets added`) : added === 1 ? 'Photo added' : `${added} photos added`);
 });
-async function shrink(file, max, q) {
+// Safari draws a PDF's first page as an image, so a PDF ticket can be kept as a picture
+async function shrink(file, max, q, up) {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('decode')); im.src = url; });
-    const s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
-    const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const w = img.naturalWidth || img.width, hh = img.naturalHeight || img.height; if (!w || !hh) throw new Error('decode');
+    const s = up ? Math.min(3, max / Math.max(w, hh)) : Math.min(1, max / Math.max(w, hh));
+    const c = document.createElement('canvas'); c.width = Math.round(w * s); c.height = Math.round(hh * s);
+    const x = c.getContext('2d'); if (up) { x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); }
+    x.drawImage(img, 0, 0, c.width, c.height);
     return await new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('encode')), 'image/jpeg', q));
   } finally { URL.revokeObjectURL(url); }
 }
@@ -1162,11 +1393,12 @@ function openLightbox(id, i) { LB = { id, i }; renderLightbox(); }
 function closeLightbox() { $('#lightbox').hidden = true; LB = null; }
 function renderLightbox() {
   const p = S.places.get(LB && LB.id); const box = $('#lightbox');
-  if (!p || !p.photos.length) { closeLightbox(); return; }
-  LB.i = (LB.i + p.photos.length) % p.photos.length; const f = p.photos[LB.i];
-  box.innerHTML = `<div class="lh"><b>${esc(p.name)} · ${LB.i + 1} of ${p.photos.length} · ${esc(firstName(f.by))}</b>${canEdit() ? `<span id="lbConfirm" hidden>Remove it? <button class="btn btn-sm" type="button" id="lbYes">Remove</button></span><button class="btn btn-sm" type="button" id="lbDel">${icon('trash')}Remove</button>` : ''}<button class="btn btn-sm" type="button" id="lbX">${icon('x')}Close</button></div>
+  const list = picsOf(p);
+  if (!p || !list.length) { closeLightbox(); return; }
+  LB.i = (LB.i + list.length) % list.length; const f = list[LB.i];
+  box.innerHTML = `<div class="lh"><b>${esc(p.name)} · ${LB.i + 1} of ${list.length} · ${esc(firstName(f.by))}</b>${canEdit() ? `<span id="lbConfirm" hidden>Remove it? <button class="btn btn-sm" type="button" id="lbYes">Remove</button></span><button class="btn btn-sm" type="button" id="lbDel">${icon('trash')}Remove</button>` : ''}<button class="btn btn-sm" type="button" id="lbX">${icon('x')}Close</button></div>
     <div class="stage"><img src="${esc(photoSrc(f))}" alt="Photo of ${esc(p.name)}"></div>
-    <div class="lf">${p.photos.length > 1 ? `<button class="btn" type="button" id="lbPrev">${icon('left')}Previous</button><button class="btn" type="button" id="lbNext">Next${icon('right')}</button>` : ''}</div>`;
+    <div class="lf">${list.length > 1 ? `<button class="btn" type="button" id="lbPrev">${icon('left')}Previous</button><button class="btn" type="button" id="lbNext">Next${icon('right')}</button>` : ''}</div>`;
   box.hidden = false;
   $('#lbX').onclick = closeLightbox;
   if ($('#lbPrev')) { $('#lbPrev').onclick = () => { LB.i--; renderLightbox(); }; $('#lbNext').onclick = () => { LB.i++; renderLightbox(); }; }
@@ -1180,6 +1412,115 @@ function renderLightbox() {
   $('#lbX').focus();
 }
 $('#lightbox').addEventListener('click', e => { if (e.target.classList.contains('stage')) closeLightbox(); });
+
+/* ---------- tickets: full screen on white so scanners can read them ---------- */
+let TK = null;
+function openTicket(p, j) {
+  const list = ticketsOf(p); if (!list.length) return;
+  TK = { id: p.id, i: ((j || 0) + list.length) % list.length }; renderTicket();
+  try { navigator.wakeLock && navigator.wakeLock.request('screen').then(l => { $('#show')._lock = l; }).catch(() => {}); } catch (e) {}
+}
+function renderTicket() {
+  const p = S.places.get(TK && TK.id), list = ticketsOf(p), el = $('#show');
+  if (!list.length) { closeShow(); return; }
+  TK.i = (TK.i + list.length) % list.length; const f = list[TK.i];
+  el.classList.add('ticket');
+  el.innerHTML = `<div class="bar"><span class="label">${esc(p.name)}${list.length > 1 ? ` · ${TK.i + 1} of ${list.length}` : ''}</span>${canEdit() ? `<span class="tconfirm" id="tkConfirm" hidden>Remove it? <button class="btn btn-sm btn-red" type="button" id="tkYes">Remove</button></span><button class="btn btn-sm btn-ghost" type="button" id="tkDel">${icon('trash')}Remove</button>` : ''}<button class="iconbtn" type="button" id="showX" aria-label="Close">${icon('x')}</button></div>
+    <div class="tstage"><img src="${esc(photoSrc(f))}" alt="Ticket for ${esc(p.name)}"></div>
+    ${list.length > 1 ? `<div class="lf"><button class="btn" type="button" id="tkPrev">${icon('left')}Previous</button><button class="btn" type="button" id="tkNext">Next${icon('right')}</button></div>` : ''}
+    <div class="fine">Turn your screen brightness up if the scanner struggles.</div>`;
+  el.hidden = false; $('#showX').focus();
+}
+$('#show').addEventListener('click', async e => {
+  if (!TK || !$('#show').classList.contains('ticket')) return;
+  const t = e.target;
+  if (t.closest('#tkPrev')) { TK.i--; renderTicket(); return; }
+  if (t.closest('#tkNext')) { TK.i++; renderTicket(); return; }
+  if (t.closest('#tkDel')) { $('#tkConfirm').hidden = false; $('#tkDel').hidden = true; return; }
+  if (t.closest('#tkYes')) {
+    const p = S.places.get(TK.id), f = ticketsOf(p)[TK.i]; if (!p || !f) return;
+    await patch('places', p.id, { photos: { [f.key]: null } }, 'removed a ticket from');
+    if (f.d) { if (S.mode === 'local') { idb.del(f.d).catch(() => {}); S.photos.delete(f.d); } else enqueue('photos/' + f.d, () => db.doc('photos/' + f.d).delete()).catch(() => {}); }
+    if (f.a && assets) assets.delete(f.a).catch(() => {});
+    toast('Ticket removed'); if (ticketsOf(S.places.get(TK.id)).length) renderTicket(); else closeShow();
+  }
+});
+
+/* ---------- paste from a site: what the Add to Tabi button copied, or a booking email ---------- */
+$('#fClipHelp').href = PWA ? 'clip.html' : CLIP_PAGE;
+function cleanCapture(c) {
+  const o = {}, s = (v, n) => typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) : '';
+  o.name = s(c.name, 80); o.ja = s(c.ja, 40);
+  o.kind = ['stay', 'move', 'see', 'food', 'craft', 'walk'].includes(c.kind) ? c.kind : '';
+  o.start = isIso(c.start) ? c.start : ''; o.end = isIso(c.end) && c.end > o.start ? c.end : '';
+  o.time = hhmm(c.time); o.checkin = hhmm(c.checkin); o.checkout = hhmm(c.checkout);
+  const pv = +c.price; o.price = isFinite(pv) && pv > 0 && pv < 1e8 ? pv : null; o.cur = c.cur === 'aud' ? 'aud' : 'jpy'; o.total = c.total === true;
+  o.conf = s(c.conf, 60); o.address = s(c.address, 200); o.addressJa = s(c.addressJa, 200); o.phone = s(c.phone, 40);
+  const la = +c.lat, ln = +c.lng; if (la > 20 && la < 46.5 && ln > 122 && ln < 154) { o.lat = +la.toFixed(5); o.lng = +ln.toFixed(5); }
+  o.url = safeUrl(s(c.url, 600)); o.site = s(c.site, 40);
+  return o;
+}
+function readCapture(text) {
+  const rec = TP.decode(text), refDay = TRIP.start || today();
+  if (rec) {
+    const tx = typeof rec.text === 'string' ? TP.fromText(rec.text.slice(0, 8000), { refDay, loose: rec.sel === true }) : {};
+    const c = rec.sel === true ? TP.merge(tx, rec) : TP.merge(rec, tx); // a selection is what they chose, so it outranks the page
+    if (!rec.kind) c.kind = tx.kind || TP.kindOf(rec.name || '', rec.url ? hostOf(rec.url) : '');
+    return { c: cleanCapture(c), from: rec.site || (rec.url ? hostOf(rec.url) : '') };
+  }
+  const urls = String(text).match(/https?:\/\/[^\s<>"')\]]+/g) || [];
+  const c = TP.merge(TP.fromText(text, { refDay, loose: true }), ...urls.slice(0, 6).map(u => TP.fromUrl(u)));
+  const gm = urls.find(u => /google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps|maps\.apple\.com/i.test(u));
+  c.url = gm || (urls.length === 1 && text.trim() === urls[0] ? urls[0] : '');
+  if (c.url && gm) c.site = 'Google Maps';
+  return { c: cleanCapture(c), from: urls.length === 1 && text.trim() === urls[0] ? hostOf(urls[0]) : '' };
+}
+function pasteNote(html, miss) { const n = $('#fPasteNote'); n.innerHTML = html; n.hidden = !html; n.classList.toggle('miss', !!miss); }
+function applyCapture(c, from) {
+  const isNew = !draft.id, got = [];
+  if (isNew && c.kind) { radio('kind', c.kind); syncKind(); $('#dlgTitle').textContent = c.kind === 'stay' ? 'Add a stay' : c.kind === 'move' ? 'Add travel' : 'Add a place'; }
+  const k = radioVal('kind');
+  if (c.name && !F.name.value.trim()) { F.name.value = c.name; got.push('name'); }
+  if (c.ja && !F.ja.value.trim()) F.ja.value = c.ja;
+  if (c.start) { F.start.value = c.start; if (k === 'stay' && c.end) F.end.value = c.end; got.push(k === 'stay' && c.end ? 'dates' : 'date'); }
+  const t = k === 'stay' ? '' : c.time; if (t) { F.time.value = t; got.push('time'); }
+  if (c.checkin) F.cin.value = c.checkin; if (c.checkout) F.cout.value = c.checkout; if (k === 'stay' && (c.checkin || c.checkout)) got.push('check-in times');
+  if (c.price) {
+    const n = k === 'stay' && F.start.value && F.end.value ? diffDays(F.start.value, F.end.value) : 0;
+    const fmt = v => c.cur === 'aud' ? 'A$' + (Math.round(v * 100) / 100).toLocaleString('en-AU') : '¥' + Math.round(v).toLocaleString('en-AU');
+    let v = c.price; if (k === 'stay' && c.total && n > 1) { if (!F.pnote.value.trim()) F.pnote.value = `${fmt(c.price)} for ${n} nights`; v = c.price / n; }
+    F.cur.value = c.cur; F.price.value = c.cur === 'aud' ? Math.round(v * 100) / 100 : Math.round(v); got.push('price');
+  }
+  if (c.conf) { F.conf.value = c.conf; radio('status', 'booked'); got.push('booking ref'); }
+  if (c.address && !F.addr.value.trim()) { F.addr.value = c.address; got.push('address'); }
+  if (c.addressJa && !F.addrJa.value.trim()) { F.addrJa.value = c.addressJa; if (!got.includes('address')) got.push('address'); }
+  if (c.phone && !F.phone.value.trim()) F.phone.value = c.phone;
+  if (c.lat != null && !hasLoc(draft)) { draft.lat = c.lat; draft.lng = c.lng; syncWhere(); got.push('map location'); }
+  if (c.url && !F.links.value.includes(c.url)) { const lbl = (c.site || hostOf(c.url)).replace(/\|/g, ' ').slice(0, 40); F.links.value = (F.links.value.trim() ? F.links.value.trim() + '\n' : '') + `${lbl} | ${c.url}`; got.push('link'); }
+  if (F.conf.value || F.addr.value || F.addrJa.value || F.phone.value || F.links.value) $('#fMore').open = true;
+  if (!hasLoc(draft)) {
+    const tries = [c.name, c.ja, ...(c.address || '').split(',').map(x => x.trim()).filter(x => x && !/\d{3}/.test(x)).reverse()].filter(Boolean);
+    for (const q of tries) { if (searchGaz(q).length) { F.loc.value = q; F.loc.dispatchEvent(new Event('input')); break; } }
+  }
+  if (c.ja && !c.name && !F.name.value.trim()) got.unshift('Japanese name');
+  const list = got.length > 1 ? got.slice(0, -1).join(', ') + ' and ' + got[got.length - 1] : got.join('');
+  const todo = [!F.name.value.trim() ? 'add an English name' : '', hasLoc(draft) ? '' : 'pick it on the map or search below'].filter(Boolean).join(', ');
+  if (got.length) pasteNote(`Filled in ${esc(list)}${from ? ' from ' + esc(from) : ''}. ${todo ? todo.charAt(0).toUpperCase() + todo.slice(1) + ', then check' : 'Check'} it and save.`);
+  else pasteNote("Couldn't find booking details in that. Use the Add to Tabi button on the booking page, or paste the confirmation email text.", true);
+}
+function usePaste(text) { $('#fPasteBox').hidden = true; if (!draft) return; const r = readCapture(text); applyCapture(r.c, r.from); }
+async function pasteFromSite() {
+  let text = '';
+  try { if (navigator.clipboard && navigator.clipboard.readText) text = await navigator.clipboard.readText(); } catch (e) {}
+  if (text && text.trim()) { usePaste(text); return; }
+  const box = $('#fPasteBox'); box.hidden = false; box.value = ''; box.focus();
+  pasteNote('');
+}
+$('#fPaste').onclick = () => pasteFromSite();
+$('#fPasteBox').addEventListener('paste', e => { const v = e.clipboardData && e.clipboardData.getData('text'); if (v && v.trim()) { e.preventDefault(); usePaste(v); } });
+let pasteT = null;
+$('#fPasteBox').addEventListener('input', e => { clearTimeout(pasteT); const v = e.target.value; if (v.trim().length > 20) pasteT = setTimeout(() => usePaste(v), 700); });
+function addFromSite() { openDialog({ kind: 'see', status: 'planned', start: '' }); pasteFromSite(); }
 
 /* ---------- ideas from Claude ---------- */
 async function askIdeas(p) {
@@ -1288,6 +1629,7 @@ function goToPeer(pe, dur) {
 /* ---------- menu ---------- */
 function renderMenu() {
   $('#menu').innerHTML = (PWA ? `<button type="button" data-m="share">${icon('share')}<span>Share trip file</span></button><label>${icon('upload')}<span>Import a trip file</span><input type="file" class="tripImport" accept=".json,application/json" hidden></label><button type="button" data-m="settings">${icon('settings')}<span>Trip settings</span></button>` : `<label>${icon('upload')}<span>Import the old map's export</span><input type="file" id="importOld" accept=".json,application/json" hidden></label>`)
+    + (canEdit() ? `<button type="button" data-m="paste">${icon('clip')}<span>Add from a site or email</span></button>` : '') + `<a href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener" class="mlink">${icon('link')}<span>Set up the Add to Tabi button</span></a>`
     + `<button type="button" data-m="rail">${icon('train')}<span>${railOn ? 'Hide' : 'Show'} Shinkansen lines</span></button><button type="button" data-m="fit">${icon('fit')}<span>Show all of Japan</span></button>`
     + `<div class="note">Map data: MLIT National Land Numerical Information, Natural Earth and GeoNames.</div>` + (PWA ? `<div class="note">Each phone keeps its own copy and works offline. To sync, share your trip file and import it on the other phone. The newest change wins.</div>` : '');
 }
@@ -1299,6 +1641,7 @@ $('#menu').addEventListener('click', e => {
   if (m === 'rail') { railOn = !railOn; mapEl.classList.toggle('no-rail', !railOn); pref('rail', railOn ? 'on' : 'off'); }
   if (m === 'fit') { if (isPhone()) setView('map'); zoomTo(japanView()); }
   if (m === 'share' && PWA) exportTrip();
+  if (m === 'paste') addFromSite();
   if (m === 'settings' && PWA) openSettings(false);
 });
 $('#menu').addEventListener('change', e => {

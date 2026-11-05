@@ -1,5 +1,5 @@
-const V = 'tabi-v2';
-const SHELL = ['./', 'index.html', 'app.js', 'geo.js', 'vendor/d3.min.js', 'vendor/topojson.min.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
+const V = 'tabi-v3';
+const SHELL = ['./', 'index.html', 'app.js', 'geo.js', 'vendor/d3.min.js', 'vendor/topojson.min.js', 'manifest.webmanifest', 'clip.html', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V && k !== 'tabi-fonts').map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {

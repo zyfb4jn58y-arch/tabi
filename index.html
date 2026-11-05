@@ -196,8 +196,9 @@ textarea.input{resize:vertical;min-height:88px;line-height:1.5}
 .ro{font:700 11px/1 var(--font);letter-spacing:.08em;text-transform:uppercase;border:1.5px solid var(--ink);padding:6px 8px}
 .rel{position:relative}
 .menu{position:absolute;z-index:40;right:0;top:calc(100% + 6px);background:var(--surface);border:1.5px solid var(--ink);width:290px;display:flex;flex-direction:column}
-.menu button,.menu label{appearance:none;display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;background:transparent;border:0;border-bottom:1px solid var(--line);text-align:left;cursor:pointer;font:600 14px/1.2 var(--font)}
-.menu button:hover,.menu label:hover{background:var(--sunk)}
+.menu button,.menu label,.menu a{appearance:none;display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;background:transparent;border:0;border-bottom:1px solid var(--line);text-align:left;cursor:pointer;font:600 14px/1.2 var(--font)}
+.menu a{color:var(--ink);text-decoration:none;box-sizing:border-box}
+.menu button:hover,.menu label:hover,.menu a:hover{background:var(--sunk)}
 .menu .note{padding:12px 14px;font:500 12px/1.45 var(--font);color:var(--ink-2)}
 
 /* day strip */
@@ -515,6 +516,23 @@ details.more .inner{display:flex;flex-direction:column;gap:12px;margin-top:12px}
 .sugg b{font-weight:700}
 .sugg small{color:var(--ink-2);font-size:12px}
 .confirm{display:flex;gap:8px;align-items:center;font:700 13px/1.2 var(--font)}
+.paste{display:flex;flex-direction:column;gap:8px;padding:12px;border:1.5px dashed var(--line-strong);background:var(--grain),var(--paper)}
+.paste-r{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.paste-r .fine{color:var(--blue-ink);text-decoration:underline;text-underline-offset:2px}
+.pastenote{font:600 13px/1.45 var(--font);color:var(--ink)}
+.pastenote b{font-weight:800}
+.pastenote.miss{color:var(--ink-2);font-weight:500}
+.tix{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tix button{appearance:none;width:64px;height:64px;padding:0;border:1.5px solid var(--ink);background:#fff;cursor:pointer;overflow:hidden}
+.tix button img{width:100%;height:100%;object-fit:cover;display:block}
+.tix .tadd{border-style:dashed;border-color:var(--line-strong);background:transparent;color:var(--ink-2);display:grid;place-items:center;align-content:center;gap:2px;font:700 10px/1.1 var(--font)}
+.tix .tadd svg.i{width:18px;height:18px}
+.tix .tadd:hover{border-color:var(--ink);color:var(--ink)}
+.show.ticket{--ink:#1b1d2e;--ink-2:#4c4a52;--surface:#ffffff;--sunk:#ececec;--paper:#ffffff;--line-strong:rgba(27,29,46,.32);background:#fff;color:#1b1d2e;color-scheme:light}
+.show .tstage{flex:1;min-height:0;display:grid;place-items:center;padding:4px 0}
+.show .tstage img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.show .lf{display:flex;justify-content:space-between;gap:8px}
+.show .tconfirm{display:flex;gap:8px;align-items:center;font:700 13px/1.2 var(--font)}
 .lightbox{position:fixed;inset:0;z-index:60;background:rgba(16,18,32,.95);display:grid;grid-template-rows:auto minmax(0,1fr) auto;padding:12px max(16px,env(safe-area-inset-left,0px));color:#efe6cf}
 .lightbox .lh{display:flex;align-items:center;gap:10px}
 .lightbox .lh b{flex:1;font:700 14px/1.3 var(--font)}
@@ -573,6 +591,8 @@ details.more .inner{display:flex;flex-direction:column;gap:12px;margin-top:12px}
     <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
     <symbol id="i-heart" viewBox="0 0 24 24"><path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4 3 5.5l7 7z"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17"/><path d="M9 4V2.5h6V4"/><path d="M9 10h6M9 14h6M9 18h3"/></symbol>
+    <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 7V5h18v2a2.5 2.5 0 0 0 0 5v0a2.5 2.5 0 0 0 0 5v2H3v-2a2.5 2.5 0 0 0 0-5 2.5 2.5 0 0 0 0-5z"/><path d="M14 5v14" stroke-dasharray="2 2"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
     <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
@@ -659,6 +679,11 @@ details.more .inner{display:flex;flex-direction:column;gap:12px;margin-top:12px}
   <form class="dlg" id="dlg" novalidate>
     <div class="dlg-h"><h2 id="dlgTitle">Add a place</h2><button class="iconbtn" type="button" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="dlg-b">
+      <div class="paste" id="fPasteWrap">
+        <div class="paste-r"><button class="btn btn-sm btn-primary" type="button" id="fPaste"><svg class="i"><use href="#i-clip"/></svg>Paste from a site</button><a class="fine" id="fClipHelp" href="clip.html" target="_blank" rel="noopener">Set up the Add to Tabi button</a></div>
+        <textarea class="input" id="fPasteBox" rows="3" hidden aria-label="Paste booking details here" placeholder="Tap and hold here, then tap Paste. A booking email works too."></textarea>
+        <div class="pastenote" id="fPasteNote" role="status" hidden></div>
+      </div>
       <div class="g2">
         <div class="field"><label for="fName">Name</label><input class="input" id="fName" autocomplete="off" placeholder="Benesse House"></div>
         <div class="field"><label for="fJa">Japanese name</label><input class="input ja" id="fJa" autocomplete="off" placeholder="直島"></div>
