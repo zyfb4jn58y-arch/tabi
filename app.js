@@ -160,9 +160,11 @@ const TP = (() => {
     for (const re of REF_RE) { re.lastIndex = 0; let m; while ((m = re.exec(text))) if (/\d/.test(m[1])) { const pin = /\bPIN(?:\s*code)?\s*[:：]?\s*(\d{3,8})\b/i.exec(text); return m[1] + (pin ? ' · PIN ' + pin[1] : ''); } }
     return '';
   }
-  function phone(text) { const m = /(?:tel(?:ephone)?|phone|電話番号|電話)\.?\s*[:：]?\s*(\+?\d[\d\s()\-]{7,18}\d)/i.exec(text); return m ? m[1].replace(/\s+/g, ' ').trim() : ''; }
+  function phone(text) { const m = /(?:tel(?:ephone)?|phone(?:\s*number)?|call(?:\s+(?:host|hotel|property|us))?|contact(?:\s+(?:host|property))?|電話番号|電話)\.?\s*[:：]?\s*(\+?\d[\d\s()\-]{7,18}\d)/i.exec(text); return m ? m[1].replace(/\s+/g, ' ').trim() : ''; }
   function address(text) {
     const out = {};
+    // an unlabelled address line: ends in Japan, or carries a Japanese postcode
+    for (const l of text.split('\n')) { const v = l.trim(); if (v.length >= 12 && v.length <= 160 && !JP.test(v) && /,/.test(v) && (/,\s*Japan\.?$/i.test(v) || /\b\d{3}-\d{4}\b/.test(v)) && !/\b(?:check|total|paid|booking|confirmation)\b/i.test(v)) { out.address = v.replace(/,\s*Japan\.?$/i, ''); break; } }
     const re = /(?:^|\n)\s*(?:address|住所|所在地)\s*[:：]?\s*([^\n]{6,160})/gi; let m;
     while ((m = re.exec(text))) { const v = m[1].trim(); if (JP.test(v)) { if (!out.addressJa) out.addressJa = v; } else if (!out.address && /\d|,/.test(v)) out.address = v; }
     if (!out.addressJa) { const j = /〒\s?\d{3}-?\d{4}\s*([^\n]{6,80})/.exec(text); if (j && JP.test(j[1])) out.addressJa = j[0].replace(/\s+/g, ' ').trim(); }
@@ -202,14 +204,29 @@ const TP = (() => {
     if (!r.time && loose) { const t = TIME.exec(text); if (t) r.time = to24(t); }
     Object.assign(r, price(text, loose) || {});
     r.conf = ref(text); r.phone = phone(text); Object.assign(r, address(text));
-    const nm = labelled(text); if (nm) { if (JP.test(nm) && !/[a-z]{3}/i.test(nm)) r.ja = nm; else r.name = nm; }
+    const nm = labelled(text); if (nm) { if (JP.test(nm) && !/[a-z]{3}/i.test(nm)) r.ja = nm; else r.name = nm; r.nameFrom = 'label'; }
     // a journey written as A → B names a travel leg
-    if (!nm) { const rt = /(?:^|[\s:：])((?:[^\s→⇒>\d:：]{2,20} ){0,2}[^\s→⇒>\d:：]{2,24})\s*(?:→|⇒|->|＞)\s*([^\s→⇒>\d]{2,24}(?:\s[^\s→⇒>\d]{2,12})?)/.exec(text); if (rt) { const v = `${rt[1]} → ${rt[2]}`; if (JP.test(v)) r.ja = v.slice(0, 40); else r.name = v.replace(' → ', ' to ').slice(0, 80); if (!r.kind) r.kind = 'move'; } }
+    if (!nm) { const rt = /(?:^|[\s:：])((?:[^\s→⇒>\d:：]{2,20} ){0,2}[^\s→⇒>\d:：]{2,24})\s*(?:→|⇒|->|＞)\s*([^\s→⇒>\d]{2,24}(?:\s[^\s→⇒>\d]{2,12})?)/.exec(text); if (rt) { const v = `${rt[1]} → ${rt[2]}`; if (JP.test(v)) r.ja = v.slice(0, 40); else r.name = v.replace(' → ', ' to ').slice(0, 80); r.nameFrom = 'route'; if (!r.kind) r.kind = 'move'; } }
     r.dates = ds.map(h => h.iso).filter((v, i, a) => a.indexOf(v) === i).slice(0, 12);
     for (const k of Object.keys(r)) if (r[k] === '' || r[k] == null) delete r[k];
     return r;
   }
-  return Object.assign({}, TPB, { dates, fromText, kindOf });
+  // which booking site a document came from, when it says so
+  const SITES = [[/airbnb/i, 'Airbnb'], [/booking\.com/i, 'Booking.com'], [/agoda/i, 'Agoda'], [/expedia/i, 'Expedia'], [/hotels\.com/i, 'Hotels.com'], [/trip\.com/i, 'Trip.com'], [/klook/i, 'Klook'], [/kkday/i, 'KKday'], [/jalan|じゃらん/i, 'Jalan'], [/rakuten|楽天/i, 'Rakuten Travel'], [/hostelworld/i, 'Hostelworld'], [/smart\s?ex|スマートEX/i, 'smart EX'], [/japan rail pass|jrpass/i, 'JR Pass']];
+  function siteOf(text) { for (const [re, n] of SITES) if (re.test(text)) return n; if (/hosted by/i.test(text) && /confirmation code/i.test(text)) return 'Airbnb'; return ''; }
+  // a place name from a document heading: drop tags like [Limited to one group], prefer a quoted name, keep the island or town
+  const GENERIC = /^(?:booking|reservation|order|trip|stay)?\s*(?:confirmation|confirmed|details|summary|receipt|invoice|itinerary|voucher|e-?ticket|ticket|your (?:booking|reservation|trip|stay)|thank you.*|予約確認書?|予約完了|領収書|お支払い明細|乗車票)$/i;
+  function docName(t) {
+    const r = {}; t = String(t || '').replace(/\s+/g, ' ').trim();
+    while (/^\s*(?:\[[^\]]{1,40}\]|【[^】]{1,40}】|〔[^〕]{1,40}〕)\s*/.test(t)) t = t.replace(/^\s*(?:\[[^\]]{1,40}\]|【[^】]{1,40}】|〔[^〕]{1,40}〕)\s*/, '');
+    if (!t || GENERIC.test(t)) return r;
+    const q = /["“「『]([^"”」』]{2,40}?)[,.、]?["”」』]/.exec(t);
+    let name = q ? q[1].replace(/[,.、\s]+$/, '').trim() : t.split(/\s+[|–—-]\s+|\s*｜\s*/)[0].trim();
+    if (q) { const at = /\b(?:on|in|at|near)\s+((?:[A-Z][\w'’-]+\s?){1,3})\s*$/.exec(t.replace(/[.!]+$/, '')); if (at) name += ', ' + at[1].trim(); }
+    if (JP.test(name) && !/[a-z]{3}/i.test(name)) r.ja = name.slice(0, 40); else r.name = name.slice(0, 80);
+    return r;
+  }
+  return Object.assign({}, TPB, { dates, fromText, kindOf, siteOf, docName, GENERIC });
 })();
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -1031,7 +1048,7 @@ function moreHTML() {
     item('notes', 'Notes and maybes', glyph('note'), `${n.filter(p => p.kind === 'note').length} notes`) +
     item('stamps', 'Stamps', glyph('see'), `${n.filter(p => p.visited).length} stamped`) +
     item('phrases', 'Phrases', glyph('food'), 'Japanese to show staff and drivers') +
-    (canEdit() ? `<div class="sec"><span class="label">Add from websites</span><div class="acts"><button class="btn" type="button" data-paste>${icon('clip')}Paste from a site or email</button><a class="btn" href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener">${icon('link')}Set up the Add to Tabi button</a></div><div class="fine">On a booking or ticket page in Safari or Brave, tap your Add to Tabi bookmark, then come back here and paste. Add ticket screenshots from a place's card.</div></div>` : '') +
+    (canEdit() ? `<div class="sec"><span class="label">Add from websites</span><div class="acts"><button class="btn" type="button" data-paste>${icon('clip')}Paste from a site or email</button><button class="btn" type="button" data-pdf>${icon('doc')}Import a booking PDF</button><a class="btn" href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener">${icon('link')}Set up the Add to Tabi button</a></div><div class="fine">On a booking or ticket page in Safari or Brave, tap your Add to Tabi bookmark, then come back here and paste. Booking PDFs saved in Files can be imported too. Add ticket screenshots from a place's card.</div></div>` : '') +
     (PWA ? `<div class="sec"><span class="label">This phone</span><div class="acts"><button class="btn" type="button" data-act="share">${icon('share')}Share trip file</button><label class="btn">${icon('upload')}Import trip file<input type="file" class="tripImport" accept=".json,application/json" hidden></label><button class="btn" type="button" data-act="settings">${icon('settings')}Trip settings</button></div><div class="fine">Each phone keeps its own copy. To sync, share your trip file and import it on the other phone. The newest change wins.</div></div>` : '');
 }
 
@@ -1047,6 +1064,7 @@ $('#pbody').addEventListener('click', async e => {
   const sa = t.closest('[data-showaddr]'); if (sa) { showAddress(S.places.get(sa.dataset.showaddr)); return; }
   const tkt = t.closest('[data-ticket]'); if (tkt) { const p = S.places.get(tkt.dataset.ticket); if (p) openTicket(p, 0); return; }
   if (t.closest('[data-paste]')) { addFromSite(); return; }
+  if (t.closest('[data-pdf]')) { addFromPdf(); return; }
   const ph = t.closest('[data-phrase]'); if (ph) { const [en, jp, ro] = PH_FLAT[+ph.dataset.phrase]; openShow({ label: en, jp, sub: ro, kc: 'var(--blue)' }); return; }
   const tk = t.closest('[data-tick]'); if (tk) { const p = S.places.get(tk.dataset.tick); if (p) await patch('places', p.id, { done: !p.done }, p.done ? 'reopened' : 'ticked off'); return; }
   const dx = t.closest('[data-delx]'); if (dx) {
@@ -1255,7 +1273,7 @@ function openDialog(p) {
   F.links.value = (p.links || []).map(l => `${l.label} | ${l.url}`).join('\n');
   $('#fMore').open = !!(p.conf || p.address || p.addressJa || p.phone || (p.links && p.links.length) || (p.kind === 'stay' && isNew));
   F.sugg.hidden = true; syncWhere();
-  $('#fPasteBox').hidden = true; $('#fPasteBox').value = ''; pasteNote('');
+  $('#fPasteBox').hidden = true; $('#fPasteBox').value = ''; pasteNote(''); pdfPending = null; $('#fKeepWrap').hidden = true; $('#fKeepPdf').checked = true;
   $('#fDel').hidden = isNew; $('#fConfirm').hidden = true;
   F.scrim.hidden = false;
   setTimeout(() => (isNew && !F.name.value ? F.name : F.notes).focus(), 30);
@@ -1314,7 +1332,9 @@ F.form.addEventListener('submit', async e => {
   else ok = await patch('places', id, data, 'edited');
   $('#fSave').disabled = false;
   if (!ok) return;
+  const keep = pdfPending && $('#fKeepPdf').checked ? pdfPending.blob : null; pdfPending = null;
   closeDialog(); select(id, { fly: true });
+  if (keep) { try { if (await storePhoto(id, keep, true)) toast('Saved, with the PDF as a ticket'); } catch (er) { toast("Saved, but the PDF couldn't be kept. Add it with Add ticket."); } }
 });
 $('#fDel').onclick = () => { $('#fConfirm').hidden = false; $('#fDel').hidden = true; $('#fDelNo').focus(); };
 $('#fDelNo').onclick = () => { $('#fConfirm').hidden = true; $('#fDel').hidden = false; };
@@ -1343,49 +1363,132 @@ document.addEventListener('keydown', e => {
 
 /* ---------- photos and tickets ---------- */
 let photoTarget = null, ticketMode = false;
+// keep one picture on a place: a photo, or a ticket (t) that opens full screen on white
+async function storePhoto(id, blob, tk) {
+  const useAssets = assets && S.mode === 'shared';
+  const key = (tk ? 't' : 'f') + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  let rec;
+  if (useAssets) { const r = await assets.upload(blob); rec = { a: r.id, by: S.meId, at: Date.now() }; }
+  else {
+    const small = S.mode === 'local' ? blob : await shrink(blob, tk ? 1200 : 720, tk ? 0.85 : 0.72);
+    const data = await blobToData(small); const pid = 'ph' + key;
+    if (S.mode === 'local') await idb.set(pid, { data, place: id });
+    else await enqueue('photos/' + pid, () => db.doc('photos/' + pid).set({ data, place: id, by: S.meId }));
+    S.photos.set(pid, { data, place: id }); rec = { d: pid, by: S.meId || 'local', at: Date.now() };
+  }
+  if (tk) rec.t = 1;
+  return patch('places', id, { photos: { [key]: rec } }, tk ? 'added a ticket to' : 'added a photo to');
+}
 $('#photoInput').addEventListener('change', async e => {
   const tk = ticketMode; ticketMode = false;
-  const files = [...e.target.files].filter(f => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|heic)$/i.test(f.name) || (tk && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)))); e.target.value = '';
+  const isPdf = f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+  const files = [...e.target.files].filter(f => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|heic)$/i.test(f.name) || (tk && isPdf(f))); e.target.value = '';
   const id = photoTarget; photoTarget = null; if (!id || !files.length) return;
   const btn = $(tk ? '#addTicket' : '#addPhoto'); if (btn) btn.classList.add('busy');
   let added = 0;
   for (const f of files.slice(0, 8)) {
-    const pdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+    const pdf = isPdf(f);
     try {
-      const useAssets = assets && S.mode === 'shared';
-      const big = tk ? (useAssets ? 2000 : 1600) : (useAssets ? 1600 : 1280), q = tk ? 0.9 : (useAssets ? 0.84 : 0.8);
-      const blob = await shrink(f, big, q, pdf);
-      const key = (tk ? 't' : 'f') + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-      let rec;
-      if (useAssets) { const r = await assets.upload(blob); rec = { a: r.id, by: S.meId, at: Date.now() }; }
-      else {
-        const small = S.mode === 'local' ? blob : await shrink(f, tk ? 1200 : 720, tk ? 0.85 : 0.72, pdf);
-        const data = await blobToData(small); const pid = 'ph' + key;
-        if (S.mode === 'local') await idb.set(pid, { data, place: id });
-        else await enqueue('photos/' + pid, () => db.doc('photos/' + pid).set({ data, place: id, by: S.meId }));
-        S.photos.set(pid, { data, place: id }); rec = { d: pid, by: S.meId || 'local', at: Date.now() };
-      }
-      if (tk) rec.t = 1;
-      await patch('places', id, { photos: { [key]: rec } }, tk ? 'added a ticket to' : 'added a photo to'); added++;
+      const big = tk ? (assets && S.mode === 'shared' ? 2000 : 1600) : (assets && S.mode === 'shared' ? 1600 : 1280), q = tk ? 0.9 : (assets && S.mode === 'shared' ? 0.84 : 0.8);
+      const blob = pdf ? (await readPdf(f, { text: false })).image : await shrink(f, big, q);
+      if (!blob) throw new Error('decode');
+      if (await storePhoto(id, blob, tk)) added++;
     } catch (er) {
-      toast(er && er.code === 'quota_exceeded' ? 'No room for more. Delete a few photos first.' : pdf ? "That PDF couldn't be read here. Take a screenshot of the ticket and add that instead." : /heic/i.test(f.name) ? 'That photo is HEIC. Try a JPEG or PNG.' : "That image couldn't be added. Try a smaller JPEG or PNG.");
+      toast(er && er.code === 'quota_exceeded' ? 'No room for more. Delete a few photos first.' : pdf ? "That PDF couldn't be read. Take a screenshot of the ticket and add that instead." : /heic/i.test(f.name) ? 'That photo is HEIC. Try a JPEG or PNG.' : "That image couldn't be added. Try a smaller JPEG or PNG.");
     }
   }
   const b2 = $(tk ? '#addTicket' : '#addPhoto'); if (b2) b2.classList.remove('busy');
   if (added) toast(tk ? (added === 1 ? 'Ticket added' : `${added} tickets added`) : added === 1 ? 'Photo added' : `${added} photos added`);
 });
-// Safari draws a PDF's first page as an image, so a PDF ticket can be kept as a picture
-async function shrink(file, max, q, up) {
+async function shrink(file, max, q) {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('decode')); im.src = url; });
     const w = img.naturalWidth || img.width, hh = img.naturalHeight || img.height; if (!w || !hh) throw new Error('decode');
-    const s = up ? Math.min(3, max / Math.max(w, hh)) : Math.min(1, max / Math.max(w, hh));
+    const s = Math.min(1, max / Math.max(w, hh));
     const c = document.createElement('canvas'); c.width = Math.round(w * s); c.height = Math.round(hh * s);
-    const x = c.getContext('2d'); if (up) { x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); }
-    x.drawImage(img, 0, 0, c.width, c.height);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
     return await new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('encode')), 'image/jpeg', q));
   } finally { URL.revokeObjectURL(url); }
+}
+
+/* ---------- booking PDFs: pdf.js reads the text and draws page one ----------
+   The iPhone app carries its own copy so it works offline; the shared map loads it from cdnjs. */
+const PDFJS = PWA ? { lib: 'vendor/pdf.min.js', worker: 'vendor/pdf.worker.min.js' } : { lib: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', worker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js' };
+let pdfjsP = null;
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (!pdfjsP) pdfjsP = new Promise((res, rej) => {
+    const sc = document.createElement('script'); sc.src = PDFJS.lib; sc.async = true;
+    sc.onload = () => { const L = window.pdfjsLib; if (!L) { pdfjsP = null; rej(new Error('pdfjs')); return; } L.GlobalWorkerOptions.workerSrc = PDFJS.worker; res(L); };
+    sc.onerror = () => { pdfjsP = null; sc.remove(); rej(new Error('pdfjs')); };
+    document.head.appendChild(sc);
+  });
+  return pdfjsP;
+}
+// rebuild reading lines from positioned text. Side-by-side columns that run for a few rows
+// (Check-in | Checkout, then the times, then the dates) are read down each column, so labels stay with their values.
+function pdfPageLines(tc, page) {
+  const items = tc.items.filter(it => it.str && it.str.trim()).map(it => ({ s: it.str, x: it.transform[4], y: it.transform[5], w: it.width || 0, h: Math.abs(it.transform[3]) || it.height || 10 }));
+  const rows = [];
+  for (const it of items.sort((a, b) => b.y - a.y || a.x - b.x)) { const r = rows.find(r => Math.abs(r.y - it.y) <= Math.max(2, Math.min(r.h, it.h) * 0.45)); if (r) { r.items.push(it); r.h = Math.max(r.h, it.h); } else rows.push({ y: it.y, h: it.h, items: [it] }); }
+  rows.sort((a, b) => b.y - a.y);
+  for (const r of rows) {
+    r.items.sort((a, b) => a.x - b.x); r.cells = [];
+    let cur = null;
+    for (const it of r.items) {
+      const gap = cur ? it.x - cur.end : 0;
+      if (cur && gap <= it.h * 2.5) { cur.s += (gap > it.h * 0.12 && !/\s$/.test(cur.s) && !/^\s/.test(it.s) ? ' ' : '') + it.s; cur.end = it.x + it.w; }
+      else { cur = { s: it.s, x: it.x, end: it.x + it.w }; r.cells.push(cur); }
+    }
+    r.cells.forEach(c => { c.s = c.s.replace(/[ \t\u00a0]+/g, ' ').trim(); });
+  }
+  const out = [];
+  for (let i = 0; i < rows.length;) {
+    const n = rows[i].cells.length; let j = i + 1;
+    if (n > 1) while (j < rows.length && rows[j].cells.length === n && rows[j].y < rows[j - 1].y && rows[j - 1].y - rows[j].y < rows[j].h * 3.2) j++;
+    if (n > 1 && j - i > 1) { for (let c = 0; c < n; c++) out.push({ t: rows.slice(i, j).map(r => r.cells[c].s).join(' '), h: rows[i].h, p: page }); }
+    else out.push({ t: rows[i].cells.map(c => c.s).join(' '), h: rows[i].h, p: page });
+    i = n > 1 && j - i > 1 ? j : i + 1;
+  }
+  return out;
+}
+async function pdfPageImage(pg) {
+  const v0 = pg.getViewport({ scale: 1 }), sc = Math.min(3, 1500 / Math.max(v0.width, v0.height)), v = pg.getViewport({ scale: sc });
+  const c = document.createElement('canvas'); c.width = Math.round(v.width); c.height = Math.round(v.height);
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+  await pg.render({ canvasContext: x, viewport: v }).promise;
+  return await new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('encode')), 'image/jpeg', 0.88));
+}
+async function readPdf(file, { text = true } = {}) {
+  const L = await loadPdfJs();
+  const doc = await L.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
+  const lines = []; let image = null;
+  for (let i = 1; i <= Math.min(doc.numPages, text ? 4 : 1); i++) {
+    const pg = await doc.getPage(i);
+    if (text) lines.push(...pdfPageLines(await pg.getTextContent(), i));
+    if (i === 1) image = await pdfPageImage(pg);
+  }
+  doc.destroy && doc.destroy();
+  return { lines, image };
+}
+// the heading: the biggest type near the top of page one, joined across its lines
+function pdfTitle(lines) {
+  const top = lines.filter(l => l.p === 1).slice(0, 10); if (!top.length) return '';
+  const hs = top.map(l => l.h).sort((a, b) => a - b), med = hs[Math.floor(hs.length / 2)];
+  for (let i = 0; i < top.length; i++) {
+    if (top[i].h < med * 1.25 || TP.GENERIC.test(top[i].t)) continue;
+    const parts = [top[i].t]; for (let k = i + 1; k < top.length && Math.abs(top[k].h - top[i].h) < 0.5; k++) parts.push(top[k].t);
+    return parts.join(' ');
+  }
+  return '';
+}
+function pdfCapture(pdf) {
+  const text = pdf.lines.map(l => l.t).join('\n');
+  const tx = TP.fromText(text, { refDay: TRIP.start || today(), loose: true }), head = TP.docName(pdfTitle(pdf.lines)), site = TP.siteOf(text);
+  const c = TP.merge(tx.nameFrom === 'label' ? { name: tx.name, ja: tx.ja } : null, head, tx);
+  c.kind = TP.kindOfHost(site) || tx.kind || 'see'; c.site = site;
+  return { c: cleanCapture(c), from: site ? `your ${site} PDF` : 'the PDF', empty: !text.trim() };
 }
 const blobToData = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); });
 let LB = null;
@@ -1487,8 +1590,7 @@ function applyCapture(c, from) {
   if (c.checkin) F.cin.value = c.checkin; if (c.checkout) F.cout.value = c.checkout; if (k === 'stay' && (c.checkin || c.checkout)) got.push('check-in times');
   if (c.price) {
     const n = k === 'stay' && F.start.value && F.end.value ? diffDays(F.start.value, F.end.value) : 0;
-    const fmt = v => c.cur === 'aud' ? 'A$' + (Math.round(v * 100) / 100).toLocaleString('en-AU') : '¥' + Math.round(v).toLocaleString('en-AU');
-    let v = c.price; if (k === 'stay' && c.total && n > 1) { if (!F.pnote.value.trim()) F.pnote.value = `${fmt(c.price)} for ${n} nights`; v = c.price / n; }
+    let v = c.price; if (k === 'stay' && c.total && n > 1) v = c.price / n; // the card already shows the total for the stay
     F.cur.value = c.cur; F.price.value = c.cur === 'aud' ? Math.round(v * 100) / 100 : Math.round(v); got.push('price');
   }
   if (c.conf) { F.conf.value = c.conf; radio('status', 'booked'); got.push('booking ref'); }
@@ -1498,6 +1600,8 @@ function applyCapture(c, from) {
   if (c.lat != null && !hasLoc(draft)) { draft.lat = c.lat; draft.lng = c.lng; syncWhere(); got.push('map location'); }
   if (c.url && !F.links.value.includes(c.url)) { const lbl = (c.site || hostOf(c.url)).replace(/\|/g, ' ').slice(0, 40); F.links.value = (F.links.value.trim() ? F.links.value.trim() + '\n' : '') + `${lbl} | ${c.url}`; got.push('link'); }
   if (F.conf.value || F.addr.value || F.addrJa.value || F.phone.value || F.links.value) $('#fMore').open = true;
+  let near = '';
+  if (!hasLoc(draft)) { const g = guessPin(c); if (g) { draft.lat = g.lat; draft.lng = g.lng; syncWhere(); near = g.n; got.push('map location'); } }
   if (!hasLoc(draft)) {
     const tries = [c.name, c.ja, ...(c.address || '').split(',').map(x => x.trim()).filter(x => x && !/\d{3}/.test(x)).reverse()].filter(Boolean);
     for (const q of tries) { if (searchGaz(q).length) { F.loc.value = q; F.loc.dispatchEvent(new Event('input')); break; } }
@@ -1505,8 +1609,19 @@ function applyCapture(c, from) {
   if (c.ja && !c.name && !F.name.value.trim()) got.unshift('Japanese name');
   const list = got.length > 1 ? got.slice(0, -1).join(', ') + ' and ' + got[got.length - 1] : got.join('');
   const todo = [!F.name.value.trim() ? 'add an English name' : '', hasLoc(draft) ? '' : 'pick it on the map or search below'].filter(Boolean).join(', ');
-  if (got.length) pasteNote(`Filled in ${esc(list)}${from ? ' from ' + esc(from) : ''}. ${todo ? todo.charAt(0).toUpperCase() + todo.slice(1) + ', then check' : 'Check'} it and save.`);
+  if (got.length) pasteNote(`Filled in ${esc(list)}${from ? ' from ' + esc(from) : ''}. ${near ? `It's pinned at ${esc(near)} for now; use <b>Pick on map</b> for the exact spot. ` : ''}${todo ? todo.charAt(0).toUpperCase() + todo.slice(1) + ', then check' : 'Check'} it and save.`);
   else pasteNote("Couldn't find booking details in that. Use the Add to Tabi button on the booking page, or paste the confirmation email text.", true);
+}
+// an island, town or sight Tabi already knows, named in the booking: "Kurashi, Teshima Island" or "366 Teshimaieura, ..."
+function guessPin(c) {
+  const clean = t => fold(String(t || '').replace(/\d[\d-]*/g, ' ').replace(/\b(?:island|islands|district|city|town|village|ward|prefecture|gun|shi|cho|machi|japan)\b/gi, ' '));
+  const parts = String(c.name || '').split(',').map(clean).filter(Boolean);
+  const toks = [...parts.slice(1), parts[0], clean(String(c.address || '').split(',')[0])].filter(t => t && t.length >= 4);
+  for (const t of toks) {
+    const g = GAZ.find(g => fold(g.n) === t) || GAZ.find(g => { const n = fold(g.n); return n.length >= 5 && !n.includes(' ') && t.split(' ').some(w => w !== n && w.startsWith(n)); });
+    if (g) return g;
+  }
+  return null;
 }
 function usePaste(text) { $('#fPasteBox').hidden = true; if (!draft) return; const r = readCapture(text); applyCapture(r.c, r.from); }
 async function pasteFromSite() {
@@ -1521,6 +1636,23 @@ $('#fPasteBox').addEventListener('paste', e => { const v = e.clipboardData && e.
 let pasteT = null;
 $('#fPasteBox').addEventListener('input', e => { clearTimeout(pasteT); const v = e.target.value; if (v.trim().length > 20) pasteT = setTimeout(() => usePaste(v), 700); });
 function addFromSite() { openDialog({ kind: 'see', status: 'planned', start: '' }); pasteFromSite(); }
+// a booking PDF: read it, fill the form, and offer to keep page one as a ticket
+let pdfPending = null;
+$('#fPdf').onclick = () => $('#pdfInput').click();
+$('#pdfInput').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f || !draft) return;
+  if (!(f.type === 'application/pdf' || /\.pdf$/i.test(f.name))) { pasteNote('That isn\'t a PDF. Choose the booking PDF from Files.', true); return; }
+  const btn = $('#fPdf'); btn.classList.add('busy'); pasteNote('Reading the PDF…');
+  try {
+    const pdf = await readPdf(f);
+    pdfPending = pdf.image ? { blob: pdf.image } : null; $('#fKeepWrap').hidden = !pdfPending;
+    const r = pdfCapture(pdf);
+    if (r.empty) pasteNote('This PDF is a scanned picture with no text, so Tabi can\'t read the details. Fill them in, and keep the PDF with the place to show at check-in.', true);
+    else applyCapture(r.c, r.from);
+  } catch (er) { pasteNote(navigator.onLine === false && !PWA ? 'Reading PDFs needs the internet the first time. Try again when you\'re online.' : 'That PDF couldn\'t be read. Try pasting the booking email instead.', true); }
+  btn.classList.remove('busy');
+});
+function addFromPdf() { openDialog({ kind: 'see', status: 'planned', start: '' }); $('#pdfInput').click(); }
 
 /* ---------- ideas from Claude ---------- */
 async function askIdeas(p) {
@@ -1629,7 +1761,7 @@ function goToPeer(pe, dur) {
 /* ---------- menu ---------- */
 function renderMenu() {
   $('#menu').innerHTML = (PWA ? `<button type="button" data-m="share">${icon('share')}<span>Share trip file</span></button><label>${icon('upload')}<span>Import a trip file</span><input type="file" class="tripImport" accept=".json,application/json" hidden></label><button type="button" data-m="settings">${icon('settings')}<span>Trip settings</span></button>` : `<label>${icon('upload')}<span>Import the old map's export</span><input type="file" id="importOld" accept=".json,application/json" hidden></label>`)
-    + (canEdit() ? `<button type="button" data-m="paste">${icon('clip')}<span>Add from a site or email</span></button>` : '') + `<a href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener" class="mlink">${icon('link')}<span>Set up the Add to Tabi button</span></a>`
+    + (canEdit() ? `<button type="button" data-m="paste">${icon('clip')}<span>Add from a site or email</span></button><button type="button" data-m="pdf">${icon('doc')}<span>Import a booking PDF</span></button>` : '') + `<a href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener" class="mlink">${icon('link')}<span>Set up the Add to Tabi button</span></a>`
     + `<button type="button" data-m="rail">${icon('train')}<span>${railOn ? 'Hide' : 'Show'} Shinkansen lines</span></button><button type="button" data-m="fit">${icon('fit')}<span>Show all of Japan</span></button>`
     + `<div class="note">Map data: MLIT National Land Numerical Information, Natural Earth and GeoNames.</div>` + (PWA ? `<div class="note">Each phone keeps its own copy and works offline. To sync, share your trip file and import it on the other phone. The newest change wins.</div>` : '');
 }
@@ -1642,6 +1774,7 @@ $('#menu').addEventListener('click', e => {
   if (m === 'fit') { if (isPhone()) setView('map'); zoomTo(japanView()); }
   if (m === 'share' && PWA) exportTrip();
   if (m === 'paste') addFromSite();
+  if (m === 'pdf') addFromPdf();
   if (m === 'settings' && PWA) openSettings(false);
 });
 $('#menu').addEventListener('change', e => {

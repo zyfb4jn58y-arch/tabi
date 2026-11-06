@@ -518,7 +518,10 @@ details.more .inner{display:flex;flex-direction:column;gap:12px;margin-top:12px}
 .confirm{display:flex;gap:8px;align-items:center;font:700 13px/1.2 var(--font)}
 .paste{display:flex;flex-direction:column;gap:8px;padding:12px;border:1.5px dashed var(--line-strong);background:var(--grain),var(--paper)}
 .paste-r{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.paste-r .fine{color:var(--blue-ink);text-decoration:underline;text-underline-offset:2px}
+.paste .fine{color:var(--blue-ink);text-decoration:underline;text-underline-offset:2px;align-self:flex-start}
+.paste .btn.busy{opacity:.6;pointer-events:none}
+.keep{display:flex;gap:10px;align-items:flex-start;font:600 13px/1.4 var(--font);cursor:pointer}
+.keep input{width:18px;height:18px;margin:1px 0 0;accent-color:var(--ink);flex:none}
 .pastenote{font:600 13px/1.45 var(--font);color:var(--ink)}
 .pastenote b{font-weight:800}
 .pastenote.miss{color:var(--ink-2);font-weight:500}
@@ -591,6 +594,7 @@ details.more .inner{display:flex;flex-direction:column;gap:12px;margin-top:12px}
     <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
     <symbol id="i-heart" viewBox="0 0 24 24"><path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4 3 5.5l7 7z"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 2.5h8l4 4v15H6z"/><path d="M14 2.5v4h4M9 12h6M9 16h6"/></symbol>
     <symbol id="i-clip" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17"/><path d="M9 4V2.5h6V4"/><path d="M9 10h6M9 14h6M9 18h3"/></symbol>
     <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 7V5h18v2a2.5 2.5 0 0 0 0 5v0a2.5 2.5 0 0 0 0 5v2H3v-2a2.5 2.5 0 0 0 0-5 2.5 2.5 0 0 0 0-5z"/><path d="M14 5v14" stroke-dasharray="2 2"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
@@ -680,9 +684,12 @@ details.more .inner{display:flex;flex-direction:column;gap:12px;margin-top:12px}
     <div class="dlg-h"><h2 id="dlgTitle">Add a place</h2><button class="iconbtn" type="button" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="dlg-b">
       <div class="paste" id="fPasteWrap">
-        <div class="paste-r"><button class="btn btn-sm btn-primary" type="button" id="fPaste"><svg class="i"><use href="#i-clip"/></svg>Paste from a site</button><a class="fine" id="fClipHelp" href="clip.html" target="_blank" rel="noopener">Set up the Add to Tabi button</a></div>
+        <div class="paste-r"><button class="btn btn-sm btn-primary" type="button" id="fPaste"><svg class="i"><use href="#i-clip"/></svg>Paste from a site</button><button class="btn btn-sm" type="button" id="fPdf"><svg class="i"><use href="#i-doc"/></svg>Import a PDF</button></div>
+        <input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden>
         <textarea class="input" id="fPasteBox" rows="3" hidden aria-label="Paste booking details here" placeholder="Tap and hold here, then tap Paste. A booking email works too."></textarea>
         <div class="pastenote" id="fPasteNote" role="status" hidden></div>
+        <label class="keep" id="fKeepWrap" hidden><input type="checkbox" id="fKeepPdf" checked><span>Keep the PDF with this place, to show at check-in</span></label>
+        <a class="fine" id="fClipHelp" href="clip.html" target="_blank" rel="noopener">Set up the Add to Tabi button</a>
       </div>
       <div class="g2">
         <div class="field"><label for="fName">Name</label><input class="input" id="fName" autocomplete="off" placeholder="Benesse House"></div>

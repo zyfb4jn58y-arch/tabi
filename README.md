@@ -10,6 +10,7 @@ Tabi (旅, journey) is an offline trip map for two people travelling Japan toget
 - **Phrases:** Japanese to show staff and taxi drivers, full screen.
 - **Notes, to-dos and a stamp book** of everywhere you've been.
 - **Add to Tabi:** a bookmark for Safari or Brave (or a Share sheet Shortcut) that reads a booking, ticket or place page and copies it. In Tabi, tap **+** then **Paste from a site** and the dates, times, price, booking reference, address and map location are filled in. Booking email text works too. Set it up from `clip.html`.
+- **Booking PDFs:** tap **+** then **Import a PDF** and choose a confirmation PDF from Files. Tabi reads the name, dates, check-in and check-out times, price, booking reference, phone and address, and can keep page one with the place as a ticket. It reads PDFs on the phone, offline, with pdf.js.
 - **Tickets:** attach ticket screenshots (or a PDF in Safari) to a place and show them full screen on white for scanning, even offline.
 
 ## Install on an iPhone
@@ -35,4 +36,4 @@ In the repository, go to **Settings**, then **Pages**. Under Build and deploymen
 
 ## Credits
 
-Map data: MLIT National Land Numerical Information (administrative areas, simplified by SmartNews Media Research Institute), English prefecture names from dataofjapan/land, Lake Biwa from Natural Earth, and town names from GeoNames (CC BY 4.0). It's built with D3 and TopoJSON. The fonts are Plus Jakarta Sans and Noto Sans JP, both from Google Fonts.
+Map data: MLIT National Land Numerical Information (administrative areas, simplified by SmartNews Media Research Institute), English prefecture names from dataofjapan/land, Lake Biwa from Natural Earth, and town names from GeoNames (CC BY 4.0). It's built with D3, TopoJSON and pdf.js (Mozilla, Apache 2.0). The fonts are Plus Jakarta Sans and Noto Sans JP, both from Google Fonts.
