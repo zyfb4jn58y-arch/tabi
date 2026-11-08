@@ -142,14 +142,28 @@ const TP = (() => {
     for (const [re, cur] of AMOUNT) { re.lastIndex = 0; let m; while ((m = re.exec(text))) { const v = num(m[1]); if (v > 0 && !out.some(o => Math.abs(o.i - m.index) < 4)) out.push({ i: m.index, v, cur }); } }
     return out.sort((a, b) => a.i - b.i);
   }
-  const TOTAL = '(?:grand total|total price|total cost|total amount|total|amount paid|you paid|you\'ll pay|charged|price for \\d+ nights?|合計|お支払い金額|料金合計|支払金額)';
+  const TOTAL = '(?:grand total|total price|total cost|total amount|total|amount paid|you paid|you\'ll pay|charged|price|合計|お支払い金額|料金合計|支払金額|料金)';
+  // the total: amounts just after a price or total label. Yen wins (that's what the property charges;
+  // a dollar figure beside it is usually an estimate), and the biggest labelled amount is the total.
   function price(text, loose) {
     const all = amounts(text); if (!all.length) return null;
-    const re = new RegExp(TOTAL, 'gi'); let m;
-    while ((m = re.exec(text))) { const from = m.index + m[0].length; const a = all.find(x => x.i >= from && x.i - from <= 60); if (a) return { price: a.v, cur: a.cur, total: true }; }
-    if (!loose) return null;
-    const pick = (all.filter(a => a.cur === 'jpy').length ? all.filter(a => a.cur === 'jpy') : all).reduce((a, b) => (b.v > a.v ? b : a));
+    const near = new Set(), re = new RegExp(TOTAL, 'gi'); let m;
+    while ((m = re.exec(text))) { const from = m.index + m[0].length; all.forEach(x => { if (x.i >= from && x.i - from <= 90) near.add(x); }); }
+    let pool = [...near]; if (!pool.length) { if (!loose) return null; pool = all; }
+    const yen = pool.filter(a => a.cur === 'jpy'); if (yen.length) pool = yen;
+    const pick = pool.reduce((a, b) => (b.v > a.v ? b : a));
     return { price: pick.v, cur: pick.cur, total: true };
+  }
+  // GPS written out: N 034° 25.375, E 134° 3.326 (degrees and minutes), 34°25'22.5"N 134°03'19.6"E, or 34.42292, 134.05543
+  function gps(text) {
+    const D = '[°º˚]', inJp = (lat, lng) => lat > 20 && lat < 46.5 && lng > 122 && lng < 154 ? { lat: +lat.toFixed(6), lng: +lng.toFixed(6) } : null;
+    const dm = (d, m, s) => +d + (+m || 0) / 60 + (+s || 0) / 3600;
+    let m = new RegExp(`([NS])\\s*(\\d{1,3})\\s*${D}\\s*(\\d{1,2}(?:\\.\\d+)?)\\s*['′]?\\s*(?:(\\d{1,2}(?:\\.\\d+)?)\\s*["″])?[\\s,;/]*([EW])\\s*(\\d{1,3})\\s*${D}\\s*(\\d{1,2}(?:\\.\\d+)?)\\s*['′]?\\s*(?:(\\d{1,2}(?:\\.\\d+)?)\\s*["″])?`, 'i').exec(text);
+    if (m) return inJp(dm(m[2], m[3], m[4]) * (/s/i.test(m[1]) ? -1 : 1), dm(m[6], m[7], m[8]) * (/w/i.test(m[5]) ? -1 : 1));
+    m = new RegExp(`(\\d{1,3})\\s*${D}\\s*(\\d{1,2})\\s*['′]\\s*(\\d{1,2}(?:\\.\\d+)?)\\s*["″]?\\s*([NS])[\\s,;/]+(\\d{1,3})\\s*${D}\\s*(\\d{1,2})\\s*['′]\\s*(\\d{1,2}(?:\\.\\d+)?)\\s*["″]?\\s*([EW])`, 'i').exec(text);
+    if (m) return inJp(dm(m[1], m[2], m[3]), dm(m[5], m[6], m[7]));
+    m = /(?:gps|coordinates|lat(?:itude)?\s*[,/&]?\s*(?:lng|lon(?:gitude)?)|location)\s*[:：]?\s*(-?\d{1,2}\.\d{3,})\s*[,\s]\s*(-?\d{2,3}\.\d{3,})/i.exec(text);
+    return m ? inJp(+m[1], +m[2]) : null;
   }
   const REF_RE = [
     /(?:booking|confirmation|reservation|order|itinerary|ticket|reference)\s*(?:number|no\.?|code|id|ref(?:erence)?)?\s*[:：#]\s*([A-Z0-9][A-Z0-9.\-]{2,28}[A-Z0-9])/gi,
@@ -168,6 +182,11 @@ const TP = (() => {
     const re = /(?:^|\n)\s*(?:address|住所|所在地)\s*[:：]?\s*([^\n]{6,160})/gi; let m;
     while ((m = re.exec(text))) { const v = m[1].trim(); if (JP.test(v)) { if (!out.addressJa) out.addressJa = v; } else if (!out.address && /\d|,/.test(v)) out.address = v; }
     if (!out.addressJa) { const j = /〒\s?\d{3}-?\d{4}\s*([^\n]{6,80})/.exec(text); if (j && JP.test(j[1])) out.addressJa = j[0].replace(/\s+/g, ' ').trim(); }
+    if (out.addressJa && /[,，、]/.test(out.addressJa)) {
+      const parts = out.addressJa.split(/[,，、]/).map(p => p.trim()).filter(p => p && !/^(?:japan|日本)$/i.test(p));
+      const pc = parts.find(p => /^〒?\s?\d{3}-?\d{4}$/.test(p)), rest = parts.filter(p => p !== pc);
+      if (rest.length >= 2 && rest.every(p => JP.test(p))) out.addressJa = (pc ? '〒' + pc.replace(/^〒\s?/, '') + ' ' : '') + rest.reverse().join('');
+    }
     return out;
   }
   const KIND_WORDS = [
@@ -184,11 +203,17 @@ const TP = (() => {
   }
   function labelled(text) {
     const m = /(?:^|\n)\s*(?:property|hotel|accommodation|venue|restaurant|attraction|activity|event|宿泊施設|施設名|店名)\s*(?:name)?\s*[:：]\s*([^\n]{3,80})/i.exec(text);
-    return m ? m[1].trim() : '';
+    if (m) return m[1].trim();
+    const a = /(?:^|\n)([^\n:：]{3,60})\n\s*(?:address|住所)\s*[:：]/i.exec(text);
+    if (a) { const v = a[1].trim(); if (/[a-z\u3040-\u9fff]{3}/i.test(v) && !/[\d¥$]/.test(v) && !GEN_LABEL.test(v)) return v; }
+    return '';
   }
+  const GEN_LABEL = /^(?:check[\s-]?(?:in|out)|price|total|units|nights|guests?|your group|payment|booking|reservation|confirmation|details|summary|contact|phone|location|map)\b/i;
+  // "Lemon tree hotel" reads better as "Lemon Tree Hotel"; names with their own capitals are left alone
+  const tidyName = s => /^[A-Z][a-z']+(?: [a-z']+){1,5}$/.test(s) ? s.split(' ').map((w, i) => i && /^(?:of|the|and|at|by|in|on|de|no)$/.test(w) ? w : w[0].toUpperCase() + w.slice(1)).join(' ') : s;
   // booking text: an email, a confirmation page or a selection. `loose` allows unlabelled guesses.
   function fromText(text, { refDay, loose } = {}) {
-    const r = {}; text = String(text || '').replace(/\r/g, '').replace(/[ \t\u00a0]+/g, ' ');
+    const r = {}; text = String(text || '').normalize('NFKC').replace(/\r/g, '').replace(/[ \t\u00a0]+/g, ' ');
     if (!text.trim()) return r;
     const ds = dates(text, refDay);
     r.kind = kindOf(text);
@@ -204,7 +229,8 @@ const TP = (() => {
     if (!r.time && loose) { const t = TIME.exec(text); if (t) r.time = to24(t); }
     Object.assign(r, price(text, loose) || {});
     r.conf = ref(text); r.phone = phone(text); Object.assign(r, address(text));
-    const nm = labelled(text); if (nm) { if (JP.test(nm) && !/[a-z]{3}/i.test(nm)) r.ja = nm; else r.name = nm; r.nameFrom = 'label'; }
+    const nm = labelled(text); if (nm) { if (JP.test(nm) && !/[a-z]{3}/i.test(nm)) r.ja = nm; else r.name = tidyName(nm); r.nameFrom = 'label'; }
+    const g = gps(text); if (g) Object.assign(r, g);
     // a journey written as A → B names a travel leg
     if (!nm) { const rt = /(?:^|[\s:：])((?:[^\s→⇒>\d:：]{2,20} ){0,2}[^\s→⇒>\d:：]{2,24})\s*(?:→|⇒|->|＞)\s*([^\s→⇒>\d]{2,24}(?:\s[^\s→⇒>\d]{2,12})?)/.exec(text); if (rt) { const v = `${rt[1]} → ${rt[2]}`; if (JP.test(v)) r.ja = v.slice(0, 40); else r.name = v.replace(' → ', ' to ').slice(0, 80); r.nameFrom = 'route'; if (!r.kind) r.kind = 'move'; } }
     r.dates = ds.map(h => h.iso).filter((v, i, a) => a.indexOf(v) === i).slice(0, 12);
@@ -223,10 +249,12 @@ const TP = (() => {
     const q = /["“「『]([^"”」』]{2,40}?)[,.、]?["”」』]/.exec(t);
     let name = q ? q[1].replace(/[,.、\s]+$/, '').trim() : t.split(/\s+[|–—-]\s+|\s*｜\s*/)[0].trim();
     if (q) { const at = /\b(?:on|in|at|near)\s+((?:[A-Z][\w'’-]+\s?){1,3})\s*$/.exec(t.replace(/[.!]+$/, '')); if (at) name += ', ' + at[1].trim(); }
-    if (JP.test(name) && !/[a-z]{3}/i.test(name)) r.ja = name.slice(0, 40); else r.name = name.slice(0, 80);
+    if (JP.test(name) && !/[a-z]{3}/i.test(name)) r.ja = name.slice(0, 40); else r.name = tidyName(name.slice(0, 80));
     return r;
   }
-  return Object.assign({}, TPB, { dates, fromText, kindOf, siteOf, docName, GENERIC });
+  // a booking number in the file name, like Booking_6738358498.pdf
+  function fileRef(name) { const m = /(?:booking|confirmation|reservation|itinerary|order)[\s_#-]*(?:no\.?|number)?[\s_#-]*([A-Z0-9]{6,20})\b/i.exec(String(name || '').replace(/\.pdf$/i, '')); return m && /\d/.test(m[1]) ? m[1] : ''; }
+  return Object.assign({}, TPB, { dates, fromText, kindOf, siteOf, docName, fileRef, gps, GENERIC });
 })();
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -343,7 +371,7 @@ const CITIES = [
  ['Himeji','姫路',34.8151,134.6853,3],['Ōtsu','大津',35.0045,135.8686,3],['Naoshima','直島',34.4608,133.9895,3],['Uno','宇野',34.4917,133.953,3],
  ['Magome','馬籠',35.5266,137.5661,3],['Kibune','貴船',35.1219,135.7629,3],['Kurama','鞍馬',35.1167,135.7722,3],['Nikkō','日光',36.7199,139.6982,3],
  ['Hakone','箱根',35.2324,139.1069,3],['Kamakura','鎌倉',35.3192,139.5467,3],['Sakurai','桜井',34.5186,135.8432,3],['Kurashiki','倉敷',34.585,133.772,3],
- ['Onomichi','尾道',34.409,133.205,3],['Shirakawa-gō','白川郷',36.2577,136.9063,3],['Tsumago','妻籠',35.5767,137.5953,3],['Teshima','豊島',34.4916,134.0632,3]
+ ['Onomichi','尾道',34.409,133.205,3],['Shirakawa-gō','白川郷',36.2577,136.9063,3],['Tsumago','妻籠',35.5767,137.5953,3],['Teshima','豊島',34.4916,134.0632,3],['Ogijima','男木島',34.4229,134.0554,3]
 ];
 const SEAS = [['Sea of Japan','日本海',39.4,134.6,0.6],['Pacific Ocean','太平洋',32.6,141.2,0.6],['Seto Inland Sea','瀬戸内海',34.1,133.0,3.2],['Lake Biwa','琵琶湖',35.27,136.07,7]];
 // Shinkansen, approximate station positions [lat, lng]
@@ -773,7 +801,7 @@ function searchGaz(q) {
 function nearestPlaceName(lat, lng) {
   let best = null, bd = Infinity; const c = Math.cos(lat * Math.PI / 180);
   for (const g of GAZ) { const d = (g.lat - lat) ** 2 + ((g.lng - lng) * c) ** 2; if (d < bd) { bd = d; best = g; } }
-  return best && Math.sqrt(bd) * 111 < 18 ? best.n : '';
+  return best && Math.sqrt(bd) * 111 < 5 ? best.n : ''; // islands sit close together, so only name somewhere really nearby
 }
 function parseCoords(s) {
   const m = s.match(/@(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || s.match(/[?&](?:q|query|ll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || s.match(/^\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{2,3}\.\d+)\s*$/);
@@ -1426,10 +1454,11 @@ function loadPdfJs() {
   });
   return pdfjsP;
 }
-// rebuild reading lines from positioned text. Side-by-side columns that run for a few rows
-// (Check-in | Checkout, then the times, then the dates) are read down each column, so labels stay with their values.
+// rebuild reading lines from positioned text, two ways. `rows` reads across the page, so a label and its value
+// on one line stay together. `cols` reads down each column: cells stacked under each other (left, right or centre
+// aligned) form a block, so CHECK-IN / 3 / NOVEMBER / 15:00 stay together even when other columns sit beside them.
 function pdfPageLines(tc, page) {
-  const items = tc.items.filter(it => it.str && it.str.trim()).map(it => ({ s: it.str, x: it.transform[4], y: it.transform[5], w: it.width || 0, h: Math.abs(it.transform[3]) || it.height || 10 }));
+  const items = tc.items.filter(it => it.str && it.str.trim()).map(it => ({ s: it.str.normalize('NFKC'), x: it.transform[4], y: it.transform[5], w: it.width || 0, h: Math.abs(it.transform[3]) || it.height || 10 }));
   const rows = [];
   for (const it of items.sort((a, b) => b.y - a.y || a.x - b.x)) { const r = rows.find(r => Math.abs(r.y - it.y) <= Math.max(2, Math.min(r.h, it.h) * 0.45)); if (r) { r.items.push(it); r.h = Math.max(r.h, it.h); } else rows.push({ y: it.y, h: it.h, items: [it] }); }
   rows.sort((a, b) => b.y - a.y);
@@ -1451,7 +1480,23 @@ function pdfPageLines(tc, page) {
     else out.push({ t: rows[i].cells.map(c => c.s).join(' '), h: rows[i].h, p: page });
     i = n > 1 && j - i > 1 ? j : i + 1;
   }
-  return out;
+  const blocks = [];
+  for (const r of rows) for (const c of r.cells) {
+    let best = null, bd = Infinity;
+    for (const b of blocks) {
+      const l = b[b.length - 1], dy = l.y - r.y;
+      if (dy <= 0.5 || dy > Math.max(l.h, r.h) * 2.8) continue;
+      const lw = l.end - l.x, cw = c.end - c.x;
+      const aligned = Math.abs(l.x - c.x) < 4 || Math.abs(l.end - c.end) < 4 || Math.abs((l.x + l.end) - (c.x + c.end)) / 2 < Math.max(6, Math.min(lw, cw) * 0.3);
+      const overlap = Math.min(l.end, c.end) - Math.max(l.x, c.x) > Math.min(lw, cw) * 0.6;
+      if ((aligned || overlap) && dy < bd) { bd = dy; best = b; }
+    }
+    const cell = { t: c.s, x: c.x, end: c.end, y: r.y, h: r.h };
+    if (best) best.push(cell); else blocks.push([cell]);
+  }
+  blocks.sort((a, b) => (Math.abs(a[0].y - b[0].y) < 3 ? a[0].x - b[0].x : b[0].y - a[0].y));
+  const cols = blocks.flatMap(b => [...b.map(c => ({ t: c.t, h: c.h, p: page })), { t: '', h: 0, p: page }]);
+  return { rows: out, cols };
 }
 async function pdfPageImage(pg) {
   const v0 = pg.getViewport({ scale: 1 }), sc = Math.min(3, 1500 / Math.max(v0.width, v0.height)), v = pg.getViewport({ scale: sc });
@@ -1463,31 +1508,37 @@ async function pdfPageImage(pg) {
 async function readPdf(file, { text = true } = {}) {
   const L = await loadPdfJs();
   const doc = await L.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
-  const lines = []; let image = null;
+  const lines = [], cols = []; let image = null;
   for (let i = 1; i <= Math.min(doc.numPages, text ? 4 : 1); i++) {
     const pg = await doc.getPage(i);
-    if (text) lines.push(...pdfPageLines(await pg.getTextContent(), i));
+    if (text) { const r = pdfPageLines(await pg.getTextContent(), i); lines.push(...r.rows); cols.push(...r.cols); }
     if (i === 1) image = await pdfPageImage(pg);
   }
   doc.destroy && doc.destroy();
-  return { lines, image };
+  return { lines, cols, image, name: file.name || '' };
 }
 // the heading: the biggest type near the top of page one, joined across its lines
 function pdfTitle(lines) {
   const top = lines.filter(l => l.p === 1).slice(0, 10); if (!top.length) return '';
   const hs = top.map(l => l.h).sort((a, b) => a - b), med = hs[Math.floor(hs.length / 2)];
   for (let i = 0; i < top.length; i++) {
-    if (top[i].h < med * 1.25 || TP.GENERIC.test(top[i].t)) continue;
+    if (top[i].h < med * 1.25 || TP.GENERIC.test(top[i].t) || !/[a-z\u3040-\u9fff]{3}/i.test(top[i].t)) continue;
     const parts = [top[i].t]; for (let k = i + 1; k < top.length && Math.abs(top[k].h - top[i].h) < 0.5; k++) parts.push(top[k].t);
     return parts.join(' ');
   }
   return '';
 }
 function pdfCapture(pdf) {
-  const text = pdf.lines.map(l => l.t).join('\n');
-  const tx = TP.fromText(text, { refDay: TRIP.start || today(), loose: true }), head = TP.docName(pdfTitle(pdf.lines)), site = TP.siteOf(text);
-  const c = TP.merge(tx.nameFrom === 'label' ? { name: tx.name, ja: tx.ja } : null, head, tx);
-  c.kind = TP.kindOfHost(site) || tx.kind || 'see'; c.site = site;
+  const text = pdf.lines.map(l => l.t).join('\n'), down = (pdf.cols || []).map(l => l.t).join('\n'), refDay = TRIP.start || today();
+  // read down the columns first (labels stay with their values), then across the rows for anything missed
+  const a = TP.fromText(down || text, { refDay, loose: true }), b = TP.fromText(text, { refDay, loose: true });
+  const when = a.start ? null : { start: b.start, end: b.end, checkin: b.checkin, checkout: b.checkout, time: b.time };
+  const rest = {}; for (const k of ['price', 'cur', 'total', 'conf', 'phone', 'address', 'addressJa', 'lat', 'lng', 'kind']) if (a[k] == null && b[k] != null) rest[k] = b[k];
+  if (rest.price != null && a.price != null) { delete rest.price; delete rest.cur; delete rest.total; }
+  const lab = [a, b].find(x => x.nameFrom === 'label'), head = TP.docName(pdfTitle(pdf.lines)), site = TP.siteOf(text);
+  const c = TP.merge(lab ? { name: lab.name, ja: lab.ja } : null, head, a, when, rest, b.nameFrom === 'route' && !a.name ? { name: b.name, ja: b.ja } : null);
+  if (!c.conf) c.conf = TP.fileRef(pdf.name);
+  c.kind = TP.kindOfHost(site) || a.kind || b.kind || 'see'; c.site = site;
   return { c: cleanCapture(c), from: site ? `your ${site} PDF` : 'the PDF', empty: !text.trim() };
 }
 const blobToData = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); });
@@ -1597,7 +1648,15 @@ function applyCapture(c, from) {
   if (c.address && !F.addr.value.trim()) { F.addr.value = c.address; got.push('address'); }
   if (c.addressJa && !F.addrJa.value.trim()) { F.addrJa.value = c.addressJa; if (!got.includes('address')) got.push('address'); }
   if (c.phone && !F.phone.value.trim()) F.phone.value = c.phone;
-  if (c.lat != null && !hasLoc(draft)) { draft.lat = c.lat; draft.lng = c.lng; syncWhere(); got.push('map location'); }
+  let moved = false;
+  if (c.lat != null) { const far = hasLoc(draft) && Math.hypot(draft.lat - c.lat, (draft.lng - c.lng) * 0.83) > 0.003; if (!hasLoc(draft) || far) { moved = far; draft.lat = c.lat; draft.lng = c.lng; syncWhere(); got.push('map location'); } }
+  // the old pin's town name as the Japanese name (直島) follows the pin to its new island or town (男木島)
+  let jaNote = '';
+  if (moved && F.ja.value.trim()) {
+    const old = GAZ.find(g => g.ja && g.ja === F.ja.value.trim()), cc = Math.cos(c.lat * Math.PI / 180);
+    const nb = GAZ.filter(g => g.ja && Math.hypot(g.lat - c.lat, (g.lng - c.lng) * cc) * 111 < 5).sort((x, y) => Math.hypot(x.lat - c.lat, (x.lng - c.lng) * cc) - Math.hypot(y.lat - c.lat, (y.lng - c.lng) * cc))[0];
+    if (old && nb && nb.ja !== old.ja) { F.ja.value = nb.ja; jaNote = `Its Japanese name changed from ${old.ja} to ${nb.ja} to match. `; }
+  }
   if (c.url && !F.links.value.includes(c.url)) { const lbl = (c.site || hostOf(c.url)).replace(/\|/g, ' ').slice(0, 40); F.links.value = (F.links.value.trim() ? F.links.value.trim() + '\n' : '') + `${lbl} | ${c.url}`; got.push('link'); }
   if (F.conf.value || F.addr.value || F.addrJa.value || F.phone.value || F.links.value) $('#fMore').open = true;
   let near = '';
@@ -1609,7 +1668,7 @@ function applyCapture(c, from) {
   if (c.ja && !c.name && !F.name.value.trim()) got.unshift('Japanese name');
   const list = got.length > 1 ? got.slice(0, -1).join(', ') + ' and ' + got[got.length - 1] : got.join('');
   const todo = [!F.name.value.trim() ? 'add an English name' : '', hasLoc(draft) ? '' : 'pick it on the map or search below'].filter(Boolean).join(', ');
-  if (got.length) pasteNote(`Filled in ${esc(list)}${from ? ' from ' + esc(from) : ''}. ${near ? `It's pinned at ${esc(near)} for now; use <b>Pick on map</b> for the exact spot. ` : ''}${todo ? todo.charAt(0).toUpperCase() + todo.slice(1) + ', then check' : 'Check'} it and save.`);
+  if (got.length) pasteNote(`Filled in ${esc(list)}${from ? ' from ' + esc(from) : ''}. ${moved ? 'The pin moved to the location in the booking. ' + esc(jaNote) : ''}${near ? `It's pinned at ${esc(near)} for now; use <b>Pick on map</b> for the exact spot. ` : ''}${todo ? todo.charAt(0).toUpperCase() + todo.slice(1) + ', then check' : 'Check'} it and save.`);
   else pasteNote("Couldn't find booking details in that. Use the Add to Tabi button on the booking page, or paste the confirmation email text.", true);
 }
 // an island, town or sight Tabi already knows, named in the booking: "Kurashi, Teshima Island" or "366 Teshimaieura, ..."
