@@ -179,6 +179,37 @@ textarea.input{resize:vertical;min-height:88px;line-height:1.5}
 .hint{display:block;font:500 12px/1.45 var(--font);color:var(--ink-2)}
 .dlg select.input:disabled{opacity:.7}
 .stampbook.postcards{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}.stampbook.postcards .stamp{max-width:170px}
+/* map search: a bar across the top, results under it, play button below it */
+.ctl-search{top:12px;left:12px;width:min(380px,calc(100% - 88px));z-index:13;display:flex;align-items:center;background:var(--surface);border:1.5px solid var(--ink);height:42px}
+.ctl-search>svg.i{flex:none;margin:0 2px 0 11px;color:var(--ink-2)}
+.ctl-search input{flex:1;min-width:0;height:100%;border:0;background:transparent;padding:0 8px;font:600 15px/1 var(--font);color:var(--ink);outline:none;-webkit-appearance:none;appearance:none}
+.ctl-search input::placeholder{color:var(--ink-3)}
+.ctl-search input::-webkit-search-cancel-button{display:none}
+.ctl-search:focus-within{outline:2px solid var(--blue);outline-offset:2px}
+.ctl-search #mqx{flex:none;appearance:none;border:0;background:none;width:40px;height:40px;display:grid;place-items:center;color:var(--ink);cursor:pointer}
+.msugg{position:absolute;left:-1.5px;right:-1.5px;top:calc(100% + 6px);background:var(--surface);border:1.5px solid var(--ink);max-height:min(60vh,420px);overflow:auto;overscroll-behavior:contain}
+.msugg .mh-h{padding:10px 12px 4px;font:800 10px/1 var(--font);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.msugg button{appearance:none;display:flex;width:100%;gap:10px;align-items:center;padding:9px 12px;border:0;border-bottom:1px solid var(--line);background:transparent;text-align:left;cursor:pointer;color:var(--ink);font:500 14px/1.3 var(--font)}
+.msugg button:last-child{border-bottom:0}
+.msugg button:hover,.msugg button.act{background:var(--sunk)}
+.msugg button>svg{flex:none;width:16px;height:16px;color:var(--ink-2)}
+.msugg button>span{min-width:0;display:flex;flex-wrap:wrap;column-gap:8px;align-items:baseline}
+.msugg b{font-weight:700}
+.msugg .ja{color:var(--ink-2);font-size:13px}
+.msugg small{flex-basis:100%;color:var(--ink-2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msugg .note{padding:10px 12px;font:500 13px/1.4 var(--font);color:var(--ink-2)}
+#map .ctl-play{top:64px}
+.banner:not([hidden])~.ctl-search{display:none}
+.spot{position:absolute;left:0;top:0;width:0;height:0;z-index:8;pointer-events:none}
+.spot i{position:absolute;left:-11px;top:-11px;width:22px;height:22px;border-radius:50%;background:var(--red);border:3px solid var(--surface);box-shadow:0 0 0 1.5px var(--ink)}
+.spot i::after{content:"";position:absolute;left:-10px;top:-10px;right:-10px;bottom:-10px;border-radius:50%;border:2px solid var(--red);animation:spot 1.6s ease-out infinite}
+@keyframes spot{from{transform:scale(.6);opacity:1}to{transform:scale(1.4);opacity:0}}
+.pop .pop-x{position:absolute;right:6px;top:6px;appearance:none;border:0;background:none;width:30px;height:30px;display:grid;place-items:center;cursor:pointer;color:var(--ink)}
+.pop h4{padding-right:28px}
+.pop .label{display:block;margin:0 0 6px}
+.pop .gm{margin-top:8px;width:100%;justify-content:center}
+@media (max-width:820px){.ctl-search{right:64px;width:auto}.ctl-search input{font-size:16px}}
+
 
 
 /* app frame */
@@ -621,6 +652,8 @@ details.more .inner{display:flex;flex-direction:column;gap:12px;margin-top:12px}
     <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 7V5h18v2a2.5 2.5 0 0 0 0 5v0a2.5 2.5 0 0 0 0 5v2H3v-2a2.5 2.5 0 0 0 0-5 2.5 2.5 0 0 0 0-5z"/><path d="M14 5v14" stroke-dasharray="2 2"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
     <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></symbol>
     <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14"/></symbol>
@@ -695,6 +728,12 @@ details.more .inner{display:flex;flex-direction:column;gap:12px;margin-top:12px}
         <div class="ctl ctl-play"><button class="btn btn-sm" type="button" id="playBtn"><svg class="i"><use href="#i-play"/></svg><span class="btn-label">Play the trip</span></button></div>
         <div class="maplegend" id="legend" aria-hidden="true"></div>
         <div class="banner" id="banner" hidden></div>
+        <div class="ctl ctl-search" id="msearch" role="search">
+          <svg class="i"><use href="#i-search"/></svg>
+          <input id="mq" type="search" placeholder="Search the map" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Search the map" aria-controls="msugg" aria-autocomplete="list">
+          <button type="button" id="mqx" aria-label="Clear the search" hidden><svg class="i"><use href="#i-x"/></svg></button>
+          <div class="msugg" id="msugg" role="listbox" aria-label="Search results" hidden></div>
+        </div>
         <a class="attrib" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap · OpenFreeMap</a>
       </div>
       <article class="card" id="card" hidden aria-live="polite"></article>

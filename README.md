@@ -3,7 +3,7 @@
 Tabi (旅, journey) is an offline trip map for two people travelling together. It started as a Japan trip app and now works for 15 countries. It installs on a phone from the browser and works without internet.
 
 - **Today:** where you're sleeping tonight, what's next with a countdown, and today's spending.
-- **Map:** a detailed street map in Tabi's colours, with streets, buildings, parks, stations and named places, plus your stays, sights, food, craft spots, walks and travel legs, each with its own shape and colour. You can replay the route with Play the trip. Areas you have looked at keep working offline, and **Save maps for offline** in the ⋯ menu saves the areas around all your places. With no internet and nothing saved, Tabi falls back to its simple map.
+- **Map:** a detailed street map in Tabi's colours, with streets, buildings, parks, stations and named places, plus your stays, sights, food, craft spots, walks and travel legs, each with its own shape and colour. Search the map from the bar at the top: it finds your own places first, then towns and sights (Japan's list works offline), then shops, stations and anything else on OpenStreetMap when you're online. Pick a result to fly there and add it to the trip in one tap. You can replay the route with Play the trip. Areas you have looked at keep working offline, and **Save maps for offline** in the ⋯ menu saves the areas around all your places. With no internet and nothing saved, Tabi falls back to its simple map.
 - **Plan:** the next seven days, with booking and ticket links under each item.
 - **Stays:** booked and shortlisted costs, plus the nights still to sort.
 - **Spend:** shared expenses in the local currency or your home money, who paid, and who owes who.

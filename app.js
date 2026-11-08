@@ -983,11 +983,11 @@ function countryView() {
 }
 const japanView = countryView;
 function fitPlaces(dur = 750) { const pts = [...S.places.values()].filter(hasLoc); return zoomTo(pts.length ? fitTransform(pts, { maxK: 10 }) : countryView(), dur); }
-function flyToPlace(p, dur = 750, k) {
+function flyToPlace(p, dur = 750, k, cyf) {
   if (!hasLoc(p)) return Promise.resolve();
   measure();
   const open = !$('#card').hidden, ph = isPhone();
-  const cx = open && !ph ? W * 0.64 : W / 2, cy = open ? (ph ? H * 0.22 : H * 0.36) : H / 2;
+  const cx = open && !ph ? W * 0.64 : W / 2, cy = cyf != null ? H * cyf : open ? (ph ? H * 0.22 : H * 0.36) : H / 2;
   if (GL) return glGo({ gl: 'at', c: [p.lng, p.lat], z: k ? K0 + Math.log2(k) : Math.max(GL.getZoom(), 15), off: [cx - W / 2, cy - H / 2] }, dur);
   const kk = k || Math.max(T.k, 14); const [x, y] = base([p.lng, p.lat]);
   return zoomTo(d3.zoomIdentity.translate(cx, cy).scale(kk).translate(-x, -y), dur);
@@ -1014,7 +1014,7 @@ const labelsEl = $('#labels'), LABELS = [];
 
 /* pins */
 const pinsEl = $('#pins');
-let pinEls = new Map(), clusterEls = [], ghostEls = [], cursorEls = new Map(), trainEl = null, popEl = null;
+let pinEls = new Map(), clusterEls = [], ghostEls = [], cursorEls = new Map(), trainEl = null, popEl = null, spotEl = null;
 function photoSrc(f) { if (f.a) return '/_blob/' + f.a; if (f.d) { const d = S.photos.get(f.d); return d && typeof d.data === 'string' && d.data.startsWith('data:image/') ? d.data : ''; } return ''; }
 function currentStay() { const t = today(); let cur = null; for (const p of routeStays()) if (p.start <= t) cur = p; return t >= TRIP.start && t <= TRIP.end ? cur : null; }
 function renderPins() {
@@ -1087,6 +1087,7 @@ function positionAll() {
   for (const el of cursorEls.values()) if (el._ll) { const [x, y] = P(el._ll[0], el._ll[1]); place(el, x, y); }
   if (trainEl && trainEl._ll) { const [x, y] = P(trainEl._ll[0], trainEl._ll[1]); place(trainEl, x, y); }
   if (popEl && popEl._ll) { const [x, y] = P(popEl._ll[0], popEl._ll[1]); placePop(x, y); }
+  if (spotEl) { const [x, y] = P(spotEl._ll[0], spotEl._ll[1]); place(spotEl, x, y); }
 }
 function renderRoute() {
   const r = d3.select('#route'); r.selectAll('*').remove();
@@ -1118,19 +1119,33 @@ function bgClick(x, y) {
   if (!canEdit()) return;
   openPop(ll, x, y);
 }
-function openPop(ll, x, y) {
+// the drop-a-pin popup; a search result (hit) gets its name, a marker and a Google Maps link
+function openPop(ll, x, y, hit) {
   closePop();
-  const near = nearestPlaceName(ll[1], ll[0]);
+  const near = hit ? '' : nearestPlaceName(ll[1], ll[0]), edit = canEdit();
   popEl = document.createElement('div'); popEl.className = 'pop'; popEl._ll = ll;
-  popEl.innerHTML = `<h4>Drop a pin here</h4><p>${near ? 'Near ' + esc(near) : `${ll[1].toFixed(3)}, ${ll[0].toFixed(3)}`}</p>
-    <div class="grid">${Object.entries(KINDS).map(([k, v]) => `<button class="btn" type="button" data-k="${k}">${glyph(k)}${esc(v.label)}</button>`).join('')}</div>`;
+  const sub = hit ? [hit.ja && hit.ja !== hit.n ? hit.ja : '', hit.sub].filter(Boolean).map(esc).join(' · ') : near ? 'Near ' + esc(near) : `${ll[1].toFixed(3)}, ${ll[0].toFixed(3)}`;
+  popEl.innerHTML = `<button class="pop-x" type="button" data-px aria-label="Close">${icon('x')}</button><h4>${hit ? esc(hit.n) : 'Drop a pin here'}</h4><p>${sub}</p>
+    ${edit ? `${hit ? '<span class="label">Add it as</span>' : ''}<div class="grid">${Object.entries(KINDS).map(([k, v]) => `<button class="btn" type="button" data-k="${k}">${glyph(k)}${esc(v.label)}</button>`).join('')}</div>` : ''}
+    ${hit ? `<a class="btn btn-sm gm" href="${esc(gmaps(hit.coords ? { kind: 'note', lat: ll[1], lng: ll[0] } : { name: hit.n, ja: hit.ja, lat: ll[1], lng: ll[0] }))}" target="_blank" rel="noopener">${icon('map')}Open in Google Maps</a>` : ''}`;
   mapEl.appendChild(popEl); placePop(x, y);
-  popEl.addEventListener('click', ev => { const b = ev.target.closest('[data-k]'); if (!b) return; const k = b.dataset.k; closePop();
-    openDialog({ kind: k, lat: ll[1], lng: ll[0], name: k === 'note' ? '' : (near || ''), status: 'planned', start: S.day || '' }); });
-  popEl.querySelector('button').focus();
+  if (hit) { spotEl = document.createElement('div'); spotEl.className = 'spot'; spotEl.innerHTML = '<i></i>'; spotEl._ll = ll; mapEl.appendChild(spotEl); place(spotEl, x, y); }
+  popEl.addEventListener('click', ev => {
+    if (ev.target.closest('[data-px]')) { closePop(); return; }
+    const b = ev.target.closest('[data-k]'); if (!b) return; const k = b.dataset.k; closePop();
+    openDialog({ kind: k, lat: +ll[1].toFixed(6), lng: +ll[0].toFixed(6), name: k === 'note' ? '' : hit && !hit.coords ? hit.n : (near || ''), ja: hit && !hit.coords ? hit.ja || '' : '', status: 'planned', start: S.day || '' });
+  });
+  (popEl.querySelector('[data-k]') || popEl.querySelector('button')).focus({ preventScroll: true });
 }
-function placePop(x, y) { if (!popEl) return; const w = 252, h = popEl.offsetHeight || 220; let px = x + 12, py = y - h / 2; if (px + w > W - 8) px = x - w - 12; px = Math.max(8, px); py = Math.max(8, Math.min(H - h - 8, py)); popEl.style.left = px + 'px'; popEl.style.top = py + 'px'; }
-function closePop() { if (popEl) { popEl.remove(); popEl = null; } }
+// beside the point on a wide map; on a phone, centred under it (or over it when there's no room) so the marker stays in view
+function placePop(x, y) {
+  if (!popEl) return; const w = 252, h = popEl.offsetHeight || 220;
+  let px, py;
+  if (W < 560) { px = (W - w) / 2; py = y + 26; if (py + h > H - 8) py = y - h - 26; }
+  else { px = x + 12; py = y - h / 2; if (px + w > W - 8) px = x - w - 12; }
+  px = Math.max(8, Math.min(W - w - 8, px)); py = Math.max(8, Math.min(H - h - 8, py)); popEl.style.left = px + 'px'; popEl.style.top = py + 'px';
+}
+function closePop() { if (popEl) { popEl.remove(); popEl = null; } if (spotEl) { spotEl.remove(); spotEl = null; } }
 
 /* gazetteer */
 const fold = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9぀-ヿ㐀-鿿]+/g, ' ').trim();
@@ -1154,10 +1169,11 @@ function nearestPlaceName(lat, lng) {
   return best && Math.sqrt(bd) * 111 < 5 ? best.n : glNearName(lat, lng); // islands sit close together, so only name somewhere really nearby
 }
 // places by name from OpenStreetMap (Photon), inside the trip's country, in English and the local language
-async function searchOnline(q) {
+async function searchOnline(q, near) {
   if (!q || q.length < 3 || navigator.onLine === false) return [];
   const b = COUNTRY().bbox, box = [b[0] - 1, b[1] - 1, b[2] + 1, b[3] + 1].map(v => v.toFixed(2)).join(',');
-  const url = l => `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8&bbox=${box}${l ? '&lang=' + l : ''}`;
+  const bias = near ? `&lat=${near.lat.toFixed(4)}&lon=${near.lng.toFixed(4)}&zoom=${Math.round(Math.max(4, Math.min(16, near.z || 10)))}` : '';
+  const url = l => `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8&bbox=${box}${bias}${l ? '&lang=' + l : ''}`;
   const get = async u => { const c = new AbortController(), t = setTimeout(() => c.abort(), 6000); try { const r = await fetch(u, { signal: c.signal }); return r.ok ? await r.json() : null; } catch (e) { return null; } finally { clearTimeout(t); } };
   const [en, loc] = await Promise.all([get(url('en')), COUNTRY().lang === 'en' ? null : get(url(''))]);
   if (!en || !Array.isArray(en.features)) return [];
@@ -1165,7 +1181,7 @@ async function searchOnline(q) {
   return en.features.map(f => {
     const p = f.properties || {}, c = (f.geometry || {}).coordinates || [], n = p.name || [p.housenumber, p.street].filter(Boolean).join(' ');
     const ja = local.get(p.osm_type + p.osm_id) || '';
-    return { n, ja: ja && ja !== n ? ja : '', lat: +c[1], lng: +c[0], sub: [p.city || p.county || p.state, p.osm_value && p.osm_value !== 'yes' ? p.osm_value.replace(/_/g, ' ') : ''].filter(x => x && x !== n).join(' · '), online: true };
+    return { n, ja: ja && ja !== n ? ja : '', lat: +c[1], lng: +c[0], sub: [p.city || p.county || p.state, p.osm_value && p.osm_value !== 'yes' ? p.osm_value.replace(/_/g, ' ') : ''].filter(x => x && x !== n).join(' · '), type: p.osm_key === 'place' || p.osm_key === 'boundary' ? p.osm_value : 'spot', online: true };
   }).filter(g => g.n && isFinite(g.lat) && isFinite(g.lng));
 }
 function parseCoords(s) {
@@ -2027,6 +2043,7 @@ function showBanner(html) { const b = $('#banner'); b.innerHTML = html; b.hidden
 function hideBanner() { $('#banner').hidden = true; if (S.follow) followBanner(); }
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
+  if (e.target === MQ.el) return; // the search bar handles its own Escape
   if (!$('#show').hidden) { closeShow(); return; }
   if (!$('#lightbox').hidden) { closeLightbox(); return; }
   if (!F.scrim.hidden) { if (!F.sugg.hidden) F.sugg.hidden = true; else closeDialog(); return; }
@@ -2035,6 +2052,80 @@ document.addEventListener('keydown', e => {
   if (!$('#menu').hidden) { toggleMenu(false); return; }
   if (S.sel) deselect();
 });
+
+/* ---------- map search: your places first, then Japan's place list (offline), then OpenStreetMap (online) ---------- */
+const MQ = { el: $('#mq'), list: $('#msugg'), x: $('#mqx'), box: $('#msearch'), hits: [], act: -1, t: 0, busy: false };
+function ownHits(q) {
+  const f = fold(q), raw = q.trim(); if (!f && !raw) return [];
+  const out = [];
+  for (const p of itinerary()) {
+    if (!hasLoc(p)) continue;
+    const hay = fold([p.name, p.ja, p.address, p.addressJa].filter(Boolean).join(' '));
+    if ((f && hay.includes(f)) || (p.ja && p.ja.includes(raw)) || (p.addressJa && p.addressJa.includes(raw))) out.push(p);
+    if (out.length >= 5) break;
+  }
+  return out.map(p => ({ place: p.id, n: p.name, ja: p.ja, kind: p.kind, lat: p.lat, lng: p.lng, sub: [KINDS[p.kind].label, p.start ? fmtShort(p.start) + (p.kind === 'stay' && p.end ? ' to ' + fmtShort(p.end) : '') : ''].filter(Boolean).join(' · ') }));
+}
+// how close to zoom for a result: whole cities and regions stay wide, a shop or sight comes in close
+function hitZoom(h) {
+  const t = String(h.type || '');
+  return /^(country|state|region|province|county|city)$/i.test(t) ? 11 : /^(town|island|islet|archipelago|municipality|district|borough|suburb|quarter|village|hamlet|neighbourhood|locality)$/i.test(t) ? 13 : 16;
+}
+function drawMapSearch() {
+  const own = MQ.hits.filter(h => h.place), other = MQ.hits.filter(h => !h.place);
+  let i = 0;
+  const row = h => { const n = i++; return `<button type="button" role="option" id="mh${n}" data-mh="${n}" class="${n === MQ.act ? 'act' : ''}" aria-selected="${n === MQ.act}">${h.place ? glyph(h.kind) : icon('pin')}<span><b>${esc(h.n)}</b>${h.ja && h.ja !== h.n ? `<span class="ja">${esc(h.ja)}</span>` : ''}${h.sub ? `<small>${esc(h.sub)}</small>` : ''}</span></button>`; };
+  let html = (own.length ? '<div class="mh-h">Your places</div>' + own.map(row).join('') : '') + (other.length ? `<div class="mh-h">${own.length ? 'More places' : 'Places'}</div>` + other.map(row).join('') : '');
+  if (MQ.busy) html += '<div class="note">Searching…</div>';
+  else if (!MQ.hits.length) html += `<div class="note">${navigator.onLine === false ? 'Nothing found in your places' + (TRIP_COUNTRY() === 'JP' ? " or Japan's place list" : '') + '. Searching for other places needs the internet.' : 'No places found. Try a town, a station or a sight.'}</div>`;
+  MQ.list.innerHTML = html; MQ.list.hidden = false;
+  MQ.el.setAttribute('aria-expanded', 'true');
+  if (MQ.act >= 0) { const a = $('#mh' + MQ.act); if (a) a.scrollIntoView({ block: 'nearest' }); MQ.el.setAttribute('aria-activedescendant', 'mh' + MQ.act); } else MQ.el.removeAttribute('aria-activedescendant');
+}
+function closeMapSearch() { MQ.list.hidden = true; MQ.el.setAttribute('aria-expanded', 'false'); clearTimeout(MQ.t); }
+function runMapSearch() {
+  const q = MQ.el.value.trim(); clearTimeout(MQ.t); MQ.x.hidden = !MQ.el.value; MQ.act = -1;
+  if (!q) { MQ.hits = []; MQ.busy = false; closeMapSearch(); return; }
+  const c = parseCoords(q);
+  const gaz = searchGaz(q).slice(0, 6).map(g => ({ n: g.n, ja: g.ja, lat: g.lat, lng: g.lng, sub: g.sub, type: g.sub === 'City' ? 'city' : g.sub === 'Sight' ? 'spot' : 'town' }));
+  MQ.hits = [...ownHits(q), ...(c ? [{ n: 'Go to these coordinates', sub: `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`, lat: c.lat, lng: c.lng, coords: true }] : []), ...gaz];
+  MQ.busy = !c && q.length >= 2 && navigator.onLine !== false;
+  drawMapSearch();
+  if (!MQ.busy) return;
+  MQ.t = setTimeout(async () => {
+    measure(); const cen = unP(W / 2, H / 2);
+    const r = await searchOnline(q, cen && isFinite(cen[0]) ? { lat: cen[1], lng: cen[0], z: GL ? GL.getZoom() : K0 + Math.log2(zk()) } : null);
+    if (MQ.el.value.trim() !== q) return;
+    const dup = h => MQ.hits.some(o => fold(o.n) === fold(h.n) && Math.abs(o.lat - h.lat) < 0.01 && Math.abs(o.lng - h.lng) < 0.01);
+    MQ.hits = [...MQ.hits, ...r.filter(h => !dup(h))].slice(0, 14); MQ.busy = false;
+    if (document.activeElement === MQ.el || !MQ.list.hidden) drawMapSearch();
+  }, 320);
+}
+async function goToHit(h) {
+  if (!h) return;
+  closeMapSearch(); MQ.el.blur();
+  if (h.place) { MQ.el.value = ''; MQ.x.hidden = true; select(h.place); return; }
+  if (isPhone() && S.view !== 'map') setView('map');
+  if (S.sel) deselect();
+  closePop();
+  const k = 2 ** (hitZoom(h) - K0); await flyToPlace({ lat: h.lat, lng: h.lng }, 800, GL ? k : Math.min(k, 100), isPhone() ? 0.3 : null);
+  const [x, y] = P(h.lng, h.lat); openPop([h.lng, h.lat], x, y, h);
+}
+MQ.el.addEventListener('input', runMapSearch);
+MQ.el.addEventListener('focus', () => { closePop(); if (MQ.el.value.trim()) { if (MQ.hits.length || MQ.busy) drawMapSearch(); else runMapSearch(); } });
+MQ.el.addEventListener('keydown', e => {
+  const n = MQ.hits.length;
+  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && n) { e.preventDefault(); if (MQ.list.hidden) drawMapSearch(); MQ.act = (MQ.act + (e.key === 'ArrowDown' ? 1 : -1) + n + 1) % (n + 1); if (MQ.act === n) MQ.act = e.key === 'ArrowDown' ? 0 : n - 1; drawMapSearch(); return; }
+  if (e.key === 'Enter') { e.preventDefault(); if (n) goToHit(MQ.hits[MQ.act >= 0 ? MQ.act : 0]); else if (!MQ.busy) runMapSearch(); return; }
+  if (e.key === 'Escape') { e.preventDefault(); if (!MQ.list.hidden) closeMapSearch(); else { MQ.el.value = ''; MQ.x.hidden = true; MQ.hits = []; MQ.el.blur(); } }
+});
+MQ.list.addEventListener('pointerdown', e => e.preventDefault()); // keep the keyboard up while choosing
+MQ.list.addEventListener('click', e => { const b = e.target.closest('[data-mh]'); if (b) goToHit(MQ.hits[+b.dataset.mh]); });
+MQ.x.addEventListener('click', () => { MQ.el.value = ''; MQ.hits = []; MQ.busy = false; MQ.x.hidden = true; closeMapSearch(); closePop(); MQ.el.focus(); });
+document.addEventListener('pointerdown', e => { if (!MQ.list.hidden && !MQ.box.contains(e.target)) closeMapSearch(); });
+// the search box sits on the map, so taps on it are not map taps
+MQ.box.addEventListener('click', e => e.stopPropagation());
+['pointerdown', 'mousedown', 'touchstart', 'wheel', 'dblclick'].forEach(t => MQ.box.addEventListener(t, e => e.stopPropagation(), { passive: true }));
 
 /* ---------- photos and tickets ---------- */
 let photoTarget = null, ticketMode = false;
