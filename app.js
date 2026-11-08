@@ -119,7 +119,10 @@ const TP = (() => {
     const re = new RegExp(label, 'gi'); let m;
     while ((m = re.exec(text))) {
       const sl = text.slice(m.index + m[0].length, m.index + m[0].length + span);
-      if (not !== null) { const by = new RegExp('(?:until|by|before|まで)\\s*' + TIME.source, 'i').exec(sl); if (by) return to24(by); }
+      if (not !== null) {
+        const by = new RegExp('(?:until|by|before|まで)\\s*' + TIME.source, 'i').exec(sl); if (by) return to24(by);
+        const rg = new RegExp(TIME.source + '\\s*[-–~〜]\\s*' + TIME.source.replace(/\(/g, '(?:').replace(/\(\?:\?/g, '(?'), 'i').exec(sl); if (rg) { const t2 = new RegExp(TIME.source, 'gi'); const ts = [...rg[0].matchAll(t2)]; if (ts[1]) return to24(ts[1]); }
+      }
       const all = [...sl.matchAll(new RegExp(TIME.source, 'gi'))].map(to24).filter(t => t !== not); if (all.length) return all[0];
     }
     return '';
@@ -149,6 +152,8 @@ const TP = (() => {
     const all = amounts(text); if (!all.length) return null;
     const near = new Set(), re = new RegExp(TOTAL, 'gi'); let m;
     while ((m = re.exec(text))) { const from = m.index + m[0].length; all.forEach(x => { if (x.i >= from && x.i - from <= 90) near.add(x); }); }
+    const fin = /(?:final price|grand total|total to pay|amount due|amount paid|you paid|you'll pay|お支払い金額|支払金額)/gi; let f;
+    while ((f = fin.exec(text))) { const from = f.index + f[0].length; const a = all.find(x => x.i >= from && x.i - from <= 40); if (a) return { price: a.v, cur: a.cur, total: true }; }
     let pool = [...near]; if (!pool.length) { if (!loose) return null; pool = all; }
     const yen = pool.filter(a => a.cur === 'jpy'); if (yen.length) pool = yen;
     const pick = pool.reduce((a, b) => (b.v > a.v ? b : a));
@@ -175,12 +180,35 @@ const TP = (() => {
     return '';
   }
   function phone(text) { const m = /(?:tel(?:ephone)?|phone(?:\s*number)?|call(?:\s+(?:host|hotel|property|us))?|contact(?:\s+(?:host|property))?|電話番号|電話)\.?\s*[:：]?\s*(\+?\d[\d\s()\-]{7,18}\d)/i.exec(text); return m ? m[1].replace(/\s+/g, ' ').trim() : ''; }
+  const fold = s => String(s).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const TOKYO = { chiyoda: '千代田区', chuo: '中央区', minato: '港区', shinjuku: '新宿区', bunkyo: '文京区', taito: '台東区', sumida: '墨田区', koto: '江東区', shinagawa: '品川区', meguro: '目黒区', ota: '大田区', setagaya: '世田谷区', shibuya: '渋谷区', nakano: '中野区', suginami: '杉並区', toshima: '豊島区', kita: '北区', arakawa: '荒川区', itabashi: '板橋区', nerima: '練馬区', adachi: '足立区', katsushika: '葛飾区', edogawa: '江戸川区' };
   function address(text) {
     const out = {};
+    const re = /(?:^|\n)\s*(?:address|住所|所在地)\s*[:：]?\s*([^\n]{6,160})((?:\n[^\n]{3,120}){0,3})/gi; let m;
+    const NEXT = /^\s*(?:phone|tel|gps|e-?mail|check|price|fax|website|電話|TEL)\b/i;
+    while ((m = re.exec(text))) {
+      let v = m[1].trim(); const more = m[2].split('\n').filter(Boolean); let jpLine = '';
+      for (const l of more) {
+        const t = l.trim(); if (!t || NEXT.test(t) || /[:：]/.test(t)) break;
+        const jpAddr = JP.test(t) && /[都道府県市区町村]/.test(t) && /\d|番/.test(t);
+        if (jpAddr && !JP.test(v)) { jpLine = t; continue; }
+        if (/[,\-]$/.test(v) || /\b\d{3}-\d{4}\b|japan$/i.test(t)) v = v + (/-$/.test(v) ? '' : ' ') + t; else break;
+      }
+      const parts = v.split(/[,，、]/).map(p => p.trim()).filter(p => p && !/^(?:japan|日本)$/i.test(p));
+      const pc = (parts.find(p => /^〒?\s?\d{3}-\d{4}$/.test(p)) || '').replace(/^〒\s?/, '');
+      const jp = parts.filter(p => JP.test(p)), en = parts.filter(p => !JP.test(p) && !/^〒?\s?\d{3}-\d{4}$/.test(p));
+      if (en.length >= 2 && !out.address) out.address = parts.join(', ');
+      const jaSrc = jpLine ? jpLine.split(/[,，、]/).map(p => p.trim()).filter(Boolean) : (en.length >= 2 ? jp : jp.length ? parts.filter(p => p !== pc) : []);
+      if (jaSrc.length && !out.addressJa) {
+        let ja = jaSrc.length > 1 && jaSrc.every(p => JP.test(p)) ? jaSrc.slice().reverse().join('') : jaSrc.join(' ');
+        // Tokyo's wards are often written in English (Suginami City): put 東京都杉並区 in front for the driver
+        const w = !/[都道府県区]/.test(ja) && en.map(p => TOKYO[fold(p).replace(/[\s-]*(?:ward|city|ku)$/, '')]).find(Boolean);
+        if (w) ja = '東京都' + w + ja;
+        out.addressJa = (pc ? '〒' + pc + ' ' : '') + ja;
+      }
+    }
     // an unlabelled address line: ends in Japan, or carries a Japanese postcode
-    for (const l of text.split('\n')) { const v = l.trim(); if (v.length >= 12 && v.length <= 160 && !JP.test(v) && /,/.test(v) && (/,\s*Japan\.?$/i.test(v) || /\b\d{3}-\d{4}\b/.test(v)) && !/\b(?:check|total|paid|booking|confirmation)\b/i.test(v)) { out.address = v.replace(/,\s*Japan\.?$/i, ''); break; } }
-    const re = /(?:^|\n)\s*(?:address|住所|所在地)\s*[:：]?\s*([^\n]{6,160})/gi; let m;
-    while ((m = re.exec(text))) { const v = m[1].trim(); if (JP.test(v)) { if (!out.addressJa) out.addressJa = v; } else if (!out.address && /\d|,/.test(v)) out.address = v; }
+    for (const l of text.split('\n')) { const v = l.trim(); if (v.length >= 12 && v.length <= 160 && !JP.test(v) && /,/.test(v) && (/,\s*Japan\.?$/i.test(v) || /\b\d{3}-\d{4}\b/.test(v)) && !/\b(?:check|total|paid|booking|confirmation)\b/i.test(v)) { if (!out.address) out.address = v.replace(/,\s*Japan\.?$/i, ''); break; } }
     if (!out.addressJa) { const j = /〒\s?\d{3}-?\d{4}\s*([^\n]{6,80})/.exec(text); if (j && JP.test(j[1])) out.addressJa = j[0].replace(/\s+/g, ' ').trim(); }
     if (out.addressJa && /[,，、]/.test(out.addressJa)) {
       const parts = out.addressJa.split(/[,，、]/).map(p => p.trim()).filter(p => p && !/^(?:japan|日本)$/i.test(p));
@@ -204,16 +232,41 @@ const TP = (() => {
   function labelled(text) {
     const m = /(?:^|\n)\s*(?:property|hotel|accommodation|venue|restaurant|attraction|activity|event|宿泊施設|施設名|店名)\s*(?:name)?\s*[:：]\s*([^\n]{3,80})/i.exec(text);
     if (m) return m[1].trim();
-    const a = /(?:^|\n)([^\n:：]{3,60})\n\s*(?:address|住所)\s*[:：]/i.exec(text);
-    if (a) { const v = a[1].trim(); if (/[a-z\u3040-\u9fff]{3}/i.test(v) && !/[\d¥$]/.test(v) && !GEN_LABEL.test(v)) return v; }
+    const lines = text.split('\n'), ai = lines.findIndex(l => /^\s*(?:address|住所)\s*[:：]/i.test(l));
+    if (ai > 0) {
+      const got = [];
+      for (let k = ai - 1; k >= 0 && got.length < 3; k--) {
+        const v = lines[k].trim();
+        if (!v || /[:：]/.test(v) || /[\d¥$]/.test(v) || GEN_LABEL.test(v) || /^(?:mon|tues|wednes|thurs|fri|satur|sun)day$|^(?:january|february|march|april|may|june|july|august|september|october|november|december)$/i.test(v)) break;
+        got.unshift(v);
+      }
+      const v = got.join(' ').trim(); if (/[a-z\u3040-\u9fff]{3}/i.test(v)) return v;
+    }
     return '';
+  }
+  // "Takayama Ouan (高山桜庵 (共立 ))" → Takayama Ouan + 高山桜庵; "APB高円寺" keeps both scripts in the name
+  function splitName(v) {
+    v = v.replace(/\s+/g, ' ').trim(); const r = {};
+    const p = v.indexOf('(');
+    if (p > 2 && /[a-z]{3}/i.test(v.slice(0, p))) {
+      r.name = v.slice(0, p).trim();
+      const inner = v.slice(p + 1).split(/[()]/)[0].trim();
+      if (JP.test(inner) && inner.replace(/\s/g, '').length >= 3) r.ja = inner;
+    } else if (JP.test(v) && !/[a-z]{3}/i.test(v.replace(/[A-Z]{2,4}(?=[\u3040-\u9fff])/g, ''))) {
+      if (/[A-Za-z]/.test(v)) r.name = v.replace(/([A-Za-z])(?=[\u3040-\u9fff])/g, '$1 ').replace(/([\u3040-\u9fff])(?=[A-Za-z])/g, '$1 '); else r.ja = v;
+    } else r.name = v;
+    if (r.name) r.name = tidyName(r.name.replace(/[(\s]+$/, ''));
+    return r;
   }
   const GEN_LABEL = /^(?:check[\s-]?(?:in|out)|price|total|units|nights|guests?|your group|payment|booking|reservation|confirmation|details|summary|contact|phone|location|map)\b/i;
   // "Lemon tree hotel" reads better as "Lemon Tree Hotel"; names with their own capitals are left alone
-  const tidyName = s => /^[A-Z][a-z']+(?: [a-z']+){1,5}$/.test(s) ? s.split(' ').map((w, i) => i && /^(?:of|the|and|at|by|in|on|de|no)$/.test(w) ? w : w[0].toUpperCase() + w.slice(1)).join(' ') : s;
+  const tidyName = s => {
+    s = s.replace(/\b[A-Z]{5,}\b/g, w => w[0] + w.slice(1).toLowerCase()); // CHISUN BUDGET → Chisun Budget; short ones like APB stay
+    return /^[A-Z][a-z']+(?: [a-z']+){1,5}$/.test(s) ? s.split(' ').map((w, i) => i && /^(?:of|the|and|at|by|in|on|de|no)$/.test(w) ? w : w[0].toUpperCase() + w.slice(1)).join(' ') : s;
+  };
   // booking text: an email, a confirmation page or a selection. `loose` allows unlabelled guesses.
   function fromText(text, { refDay, loose } = {}) {
-    const r = {}; text = String(text || '').normalize('NFKC').replace(/\r/g, '').replace(/[ \t\u00a0]+/g, ' ');
+    const r = {}; text = String(text || '').normalize('NFKC').replace(/\r/g, '').replace(/[ \t\u00a0]+/g, ' ').replace(/(\d)[‐‑‒–—―−－](?=\d)/g, '$1-');
     if (!text.trim()) return r;
     const ds = dates(text, refDay);
     r.kind = kindOf(text);
@@ -229,7 +282,10 @@ const TP = (() => {
     if (!r.time && loose) { const t = TIME.exec(text); if (t) r.time = to24(t); }
     Object.assign(r, price(text, loose) || {});
     r.conf = ref(text); r.phone = phone(text); Object.assign(r, address(text));
-    const nm = labelled(text); if (nm) { if (JP.test(nm) && !/[a-z]{3}/i.test(nm)) r.ja = nm; else r.name = tidyName(nm); r.nameFrom = 'label'; }
+    const nm = labelled(text); if (nm) { Object.assign(r, splitName(nm)); r.nameFrom = 'label'; }
+    // the room booked, and whether breakfast comes with it
+    const rm = /(?:^|\n)([^\n:：]{4,70})\n\s*guest name\s*[:：]/i.exec(text); if (rm && !/[¥$]|\d{3}/.test(rm[1])) r.room = rm[1].trim();
+    if (/breakfast (?:is )?included|includes breakfast|朝食付/i.test(text)) r.breakfast = true;
     const g = gps(text); if (g) Object.assign(r, g);
     // a journey written as A → B names a travel leg
     if (!nm) { const rt = /(?:^|[\s:：])((?:[^\s→⇒>\d:：]{2,20} ){0,2}[^\s→⇒>\d:：]{2,24})\s*(?:→|⇒|->|＞)\s*([^\s→⇒>\d]{2,24}(?:\s[^\s→⇒>\d]{2,12})?)/.exec(text); if (rt) { const v = `${rt[1]} → ${rt[2]}`; if (JP.test(v)) r.ja = v.slice(0, 40); else r.name = v.replace(' → ', ' to ').slice(0, 80); r.nameFrom = 'route'; if (!r.kind) r.kind = 'move'; } }
@@ -1467,7 +1523,7 @@ function pdfPageLines(tc, page) {
     let cur = null;
     for (const it of r.items) {
       const gap = cur ? it.x - cur.end : 0;
-      if (cur && gap <= it.h * 2.5) { cur.s += (gap > it.h * 0.12 && !/\s$/.test(cur.s) && !/^\s/.test(it.s) ? ' ' : '') + it.s; cur.end = it.x + it.w; }
+      if (cur && gap <= Math.min(it.h, 11) * 2.2) { cur.s += (gap > it.h * 0.12 && !/\s$/.test(cur.s) && !/^\s/.test(it.s) ? ' ' : '') + it.s; cur.end = it.x + it.w; }
       else { cur = { s: it.s, x: it.x, end: it.x + it.w }; r.cells.push(cur); }
     }
     r.cells.forEach(c => { c.s = c.s.replace(/[ \t\u00a0]+/g, ' ').trim(); });
@@ -1533,8 +1589,9 @@ function pdfCapture(pdf) {
   // read down the columns first (labels stay with their values), then across the rows for anything missed
   const a = TP.fromText(down || text, { refDay, loose: true }), b = TP.fromText(text, { refDay, loose: true });
   const when = a.start ? null : { start: b.start, end: b.end, checkin: b.checkin, checkout: b.checkout, time: b.time };
-  const rest = {}; for (const k of ['price', 'cur', 'total', 'conf', 'phone', 'address', 'addressJa', 'lat', 'lng', 'kind']) if (a[k] == null && b[k] != null) rest[k] = b[k];
-  if (rest.price != null && a.price != null) { delete rest.price; delete rest.cur; delete rest.total; }
+  const rest = {}; for (const k of ['conf', 'phone', 'address', 'addressJa', 'lat', 'lng', 'kind', 'room', 'breakfast']) if (a[k] == null && b[k] != null) rest[k] = b[k];
+  const pr = b.price != null ? b : a; // prices read best across the rows, where a label and its amount share a line
+  if (pr.price != null) { a.price = pr.price; a.cur = pr.cur; a.total = pr.total; }
   const lab = [a, b].find(x => x.nameFrom === 'label'), head = TP.docName(pdfTitle(pdf.lines)), site = TP.siteOf(text);
   const c = TP.merge(lab ? { name: lab.name, ja: lab.ja } : null, head, a, when, rest, b.nameFrom === 'route' && !a.name ? { name: b.name, ja: b.ja } : null);
   if (!c.conf) c.conf = TP.fileRef(pdf.name);
@@ -1611,7 +1668,13 @@ function cleanCapture(c) {
   const pv = +c.price; o.price = isFinite(pv) && pv > 0 && pv < 1e8 ? pv : null; o.cur = c.cur === 'aud' ? 'aud' : 'jpy'; o.total = c.total === true;
   o.conf = s(c.conf, 60); o.address = s(c.address, 200); o.addressJa = s(c.addressJa, 200); o.phone = s(c.phone, 40);
   const la = +c.lat, ln = +c.lng; if (la > 20 && la < 46.5 && ln > 122 && ln < 154) { o.lat = +la.toFixed(5); o.lng = +ln.toFixed(5); }
-  o.url = safeUrl(s(c.url, 600)); o.site = s(c.site, 40);
+  o.url = safeUrl(s(c.url, 600)); o.site = s(c.site, 40); o.room = s(c.room, 80); o.breakfast = c.breakfast === true;
+  // "APB 高円寺" becomes APB Koenji when Tabi knows the Japanese place name; the Japanese stays as the sign
+  if (o.name && TP.JP.test(o.name)) {
+    let en = o.name, ok = true;
+    for (const r of o.name.match(/[\u3040-\u30ff\u3400-\u9fff]+/g) || []) { const g = GAZ.find(g => g.ja === r); if (g) en = en.replace(r, g.n); else ok = false; }
+    if (ok) { if (!o.ja) o.ja = o.name.replace(/\s+/g, ''); o.name = en.replace(/\s+/g, ' ').trim(); }
+  }
   return o;
 }
 function readCapture(text) {
@@ -1648,6 +1711,8 @@ function applyCapture(c, from) {
   if (c.address && !F.addr.value.trim()) { F.addr.value = c.address; got.push('address'); }
   if (c.addressJa && !F.addrJa.value.trim()) { F.addrJa.value = c.addressJa; if (!got.includes('address')) got.push('address'); }
   if (c.phone && !F.phone.value.trim()) F.phone.value = c.phone;
+  if (c.room && !F.notes.value.trim()) { F.notes.value = c.room + (c.breakfast ? '. Breakfast included.' : ''); got.push('room'); }
+  else if (c.breakfast && !F.pnote.value.trim()) F.pnote.value = 'Breakfast included';
   let moved = false;
   if (c.lat != null) { const far = hasLoc(draft) && Math.hypot(draft.lat - c.lat, (draft.lng - c.lng) * 0.83) > 0.003; if (!hasLoc(draft) || far) { moved = far; draft.lat = c.lat; draft.lng = c.lng; syncWhere(); got.push('map location'); } }
   // the old pin's town name as the Japanese name (直島) follows the pin to its new island or town (男木島)
