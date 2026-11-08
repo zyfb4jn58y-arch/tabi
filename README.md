@@ -1,14 +1,14 @@
 # Tabi
 
-Tabi (旅, journey) is an offline trip map for two people travelling Japan together. It installs on a phone from the browser and works without internet.
+Tabi (旅, journey) is an offline trip map for two people travelling together. It started as a Japan trip app and now works for 15 countries. It installs on a phone from the browser and works without internet.
 
 - **Today:** where you're sleeping tonight, what's next with a countdown, and today's spending.
-- **Map:** your stays, sights, food, craft spots, walks and travel legs, each with its own shape and colour. You can replay the route with Play the trip.
+- **Map:** a detailed street map in Tabi's colours, with streets, buildings, parks, stations and named places, plus your stays, sights, food, craft spots, walks and travel legs, each with its own shape and colour. You can replay the route with Play the trip. Areas you have looked at keep working offline, and **Save maps for offline** in the ⋯ menu saves the areas around all your places. With no internet and nothing saved, Tabi falls back to its simple map.
 - **Plan:** the next seven days, with booking and ticket links under each item.
 - **Stays:** booked and shortlisted costs, plus the nights still to sort.
-- **Spend:** shared expenses in yen or dollars, who paid, and who owes who.
-- **Phrases:** Japanese to show staff and taxi drivers, full screen.
-- **Notes, to-dos and a stamp book** of everywhere you've been.
+- **Spend:** shared expenses in the local currency or your home money, who paid, and who owes who.
+- **Phrases:** the local language to show staff and taxi drivers, full screen. For the UK, the US and New Zealand this becomes **Local words**: the words and customs that differ.
+- **Notes, to-dos and a keepsake book** of everywhere you've been: ink stamps in Japan, Korea and Taiwan, postcards in Europe, the UK and Southeast Asia, and embroidered patches in the US and New Zealand.
 - **Add to Tabi:** a bookmark for Safari or Brave (or a Share sheet Shortcut) that reads a booking, ticket or place page and copies it. In Tabi, tap **+** then **Paste from a site** and the dates, times, price, booking reference, address and map location are filled in. Booking email text works too. Set it up from `clip.html`.
 - **Booking PDFs:** tap **+** then **Import a PDF** and choose a confirmation PDF from Files. Tabi reads the name, dates, check-in and check-out times, price, booking reference, phone and address, and can keep page one with the place as a ticket. It reads PDFs on the phone, offline, with pdf.js.
 - **Tickets:** attach ticket screenshots (or a PDF in Safari) to a place and show them full screen on white for scanning, even offline.
@@ -21,6 +21,14 @@ Tabi (旅, journey) is an offline trip map for two people travelling Japan toget
 4. To import, save the trip file to the Files app, then tap **Import a trip file** and choose it.
 
 Do the import inside the home-screen app, not in Safari. iPhones keep the two separate, so a trip imported in Safari won't appear in the app.
+
+## Countries
+
+When you set up a new trip, pick the country. It sets the phrases, the local currency, the local-language name and address fields (for taxis), the keepsake book and where the map starts. Choose your home money too, and Tabi fills in today's exchange rate when you're online (you can type your own).
+
+Japan, South Korea, Taiwan, Thailand, Vietnam, Indonesia, Italy, France, Spain, Portugal, Greece, Germany, the United Kingdom, the United States and New Zealand are included. The country is fixed once a trip has places in it. A trip file carries its country, so the other phone matches.
+
+Japan has an offline place list for search. Elsewhere, searching for a place needs the internet (it uses OpenStreetMap through Photon), and you can always pick a spot on the map instead.
 
 ## Sharing changes between two phones
 
@@ -36,4 +44,6 @@ In the repository, go to **Settings**, then **Pages**. Under Build and deploymen
 
 ## Credits
 
-Map data: MLIT National Land Numerical Information (administrative areas, simplified by SmartNews Media Research Institute), English prefecture names from dataofjapan/land, Lake Biwa from Natural Earth, and town names from GeoNames (CC BY 4.0). It's built with D3, TopoJSON and pdf.js (Mozilla, Apache 2.0). The fonts are Plus Jakarta Sans and Noto Sans JP, both from Google Fonts.
+Detailed map: © OpenStreetMap contributors, tiles from OpenFreeMap (OpenMapTiles schema), drawn with MapLibre GL JS (BSD). Place search by Photon (komoot), exchange rates from open.er-api.com, and world outlines from Natural Earth via world-atlas.
+
+Simple map of Japan: MLIT National Land Numerical Information (administrative areas, simplified by SmartNews Media Research Institute), English prefecture names from dataofjapan/land, Lake Biwa from Natural Earth, and town names from GeoNames (CC BY 4.0). It's built with D3, TopoJSON and pdf.js (Mozilla, Apache 2.0). The fonts are Plus Jakarta Sans and the Noto Sans family (Japanese, Korean, Chinese and Thai), all from Google Fonts.

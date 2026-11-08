@@ -6,7 +6,8 @@
    so the button stays small and gets better whenever the app updates. */
 const TPB = (() => {
   const p2 = n => String(n).padStart(2, '0');
-  const JP = /[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]/;
+  // a local script: Japanese, Chinese, Korean, Thai or Greek (Latin-script names and addresses stay as they are)
+  const JP = /[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f\uac00-\ud7af\u1100-\u11ff\u3130-\u318f\u0e00-\u0e7f\u0370-\u03ff]/;
   const isoOf = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
   const dayMs = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).getTime(); };
   const num = s => +String(s).replace(/[,\s]/g, '');
@@ -34,7 +35,7 @@ const TPB = (() => {
     const off = [].concat(f.offers || o.offers || [])[0];
     if (pr == null && off) { pr = off.price != null ? off.price : off.lowPrice; cur = off.priceCurrency; }
     if (pr && typeof pr === 'object') { cur = pr.priceCurrency || cur; pr = pr.price; }
-    const pv = num(pr); if (pv > 0 && /^(JPY|AUD)?$/i.test(cur || '')) { r.price = pv; r.cur = /AUD/i.test(cur) ? 'aud' : 'jpy'; r.total = isRes; }
+    const pv = num(pr); if (pv > 0 && /^([A-Z]{3})?$/i.test(cur || '')) { r.price = pv; r.cur = String(cur || '').toUpperCase(); r.total = isRes; }
     const place = f.location && typeof f.location === 'object' && !Array.isArray(f.location) ? f.location : f;
     const a = place.address || f.address;
     if (a) { const ja = addr(a); if (JP.test(ja)) r.addressJa = ja.slice(0, 200); const en = addrEn(a); if (en && !JP.test(en)) r.address = en.slice(0, 200); }
@@ -46,7 +47,7 @@ const TPB = (() => {
   function coords(s) {
     const m = /@(-?\d+\.\d+),\s*(-?\d+\.\d+)/.exec(s) || /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/.exec(s) || /[?&](?:q|query|ll|center|daddr|destination|sll)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/i.exec(s);
     if (!m) return null; const lat = +m[1], lng = +m[2];
-    return lat > 20 && lat < 46.5 && lng > 122 && lng < 154 ? { lat, lng } : null;
+    return Math.abs(lat) <= 85 && Math.abs(lng) <= 180 && (lat || lng) ? { lat, lng } : null;
   }
   // dates and coordinates from a booking site's address (checkin=2026-11-05 and the like)
   function fromUrl(u) {
@@ -132,42 +133,64 @@ const TP = (() => {
     while ((m = re.exec(text))) { const from = m.index + m[0].length; const d = ds.find(h => h.i >= from && h.i - from <= span); if (d) return d.iso; }
     return '';
   }
-  const AMOUNT = [
-    [/(?:¥|￥|JPY)\s?(\d{1,3}(?:,\d{3})+|\d+)(?![\d.])/gi, 'jpy'],
-    [/(\d{1,3}(?:,\d{3})+|\d{3,})\s?(?:円|JPY|yen)\b/gi, 'jpy'],
-    [/(\d{1,3}(?:,\d{3})+|\d{3,})\s?円/g, 'jpy'],
-    [/(?:A\$|AU\$|AUD)\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/gi, 'aud'],
-    [/(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)\s?AUD\b/gi, 'aud'],
-    [/(?<![A-Za-z])\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/g, 'aud']
-  ];
+  // amounts in any currency Tabi knows. Yen and Australian dollars read exactly as they always have;
+  // a bare $ is the trip's own dollar, else the home dollar. 1.234,50 € and €1,234.50 both read as 1234.5.
+  const DOLLARS = ['AUD', 'USD', 'NZD', 'CAD', 'SGD'];
+  const localCur = () => typeof COUNTRY === 'function' ? COUNTRY().cur : 'JPY';
+  const homeCur = () => typeof S !== 'undefined' && S.settings && S.settings.home || 'AUD';
+  const amt = s => { const t = String(s).replace(/[\s  ]/g, ''), m = /^(.*?)[.,](\d{1,2})$/.exec(t); return m ? +(m[1].replace(/[.,]/g, '') + '.' + m[2]) : +t.replace(/[.,]/g, ''); };
+  const NUM = '(\\d{1,3}(?:[,.\\u00a0\\u202f ]\\d{3})+(?:[.,]\\d{1,2})?(?!\\d)|\\d+(?:[.,]\\d{1,2})?)';
+  const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let AMT = null, AMT_KEY = '';
+  function amountRes() {
+    const key = localCur() + homeCur(); if (AMT && AMT_KEY === key) return AMT;
+    const list = [
+      [/(?:¥|￥|JPY)\s?(\d{1,3}(?:,\d{3})+|\d+)(?![\d.])/gi, 'JPY'],
+      [/(\d{1,3}(?:,\d{3})+|\d{3,})\s?(?:円|JPY|yen)\b/gi, 'JPY'],
+      [/(\d{1,3}(?:,\d{3})+|\d{3,})\s?円/g, 'JPY'],
+      [/(?:A\$|AU\$|AUD)\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/gi, 'AUD'],
+      [/(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)\s?AUD\b/gi, 'AUD']
+    ];
+    if (typeof CUR === 'object') for (const [code, c] of Object.entries(CUR)) {
+      if (code === 'JPY' || code === 'AUD') continue;
+      for (const sym of c.re) {
+        if (sym === '$') continue;
+        const e = escRe(sym), word = /^[A-Za-z]/.test(sym) ? '(?<![A-Za-z])' : '', end = /[A-Za-z]$/.test(sym) ? '(?![A-Za-z])' : '';
+        list.push([new RegExp(`${word}${e}\\s?${NUM}`, 'gi'), code], [new RegExp(`${NUM}\\s?${e}${end}`, 'gi'), code]);
+      }
+    }
+    const bare = DOLLARS.includes(localCur()) ? localCur() : DOLLARS.includes(homeCur()) ? homeCur() : 'USD';
+    list.push([/(?<![A-Za-z])\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/g, bare]);
+    AMT_KEY = key; return (AMT = list);
+  }
   function amounts(text) {
     const out = [];
-    for (const [re, cur] of AMOUNT) { re.lastIndex = 0; let m; while ((m = re.exec(text))) { const v = num(m[1]); if (v > 0 && !out.some(o => Math.abs(o.i - m.index) < 4)) out.push({ i: m.index, v, cur }); } }
+    for (const [re, cur] of amountRes()) { re.lastIndex = 0; let m; while ((m = re.exec(text))) { const v = cur === 'JPY' || cur === 'AUD' ? num(m[1]) : amt(m[1]); if (v > 0 && !out.some(o => Math.abs(o.i - m.index) < 4)) out.push({ i: m.index, v, cur }); } }
     return out.sort((a, b) => a.i - b.i);
   }
-  const TOTAL = '(?:grand total|total price|total cost|total amount|total|amount paid|you paid|you\'ll pay|charged|price|合計|お支払い金額|料金合計|支払金額|料金)';
+  const TOTAL = '(?:grand total|total price|total cost|total amount|total|amount paid|you paid|you\'ll pay|charged|price|合計|お支払い金額|料金合計|支払金額|料金|totale|importo|gesamtbetrag|gesamtpreis|summe|montant|prix total|importe|precio total|preço total|σύνολο|합계|총 ?금액|결제 ?금액|總計|總金額|ยอดรวม|tổng cộng)';
   // the total: amounts just after a price or total label. Yen wins (that's what the property charges;
   // a dollar figure beside it is usually an estimate), and the biggest labelled amount is the total.
   function price(text, loose) {
     const all = amounts(text); if (!all.length) return null;
     const near = new Set(), re = new RegExp(TOTAL, 'gi'); let m;
     while ((m = re.exec(text))) { const from = m.index + m[0].length; all.forEach(x => { if (x.i >= from && x.i - from <= 90) near.add(x); }); }
-    const fin = /(?:final price|grand total|total to pay|amount due|amount paid|you paid|you'll pay|お支払い金額|支払金額)/gi; let f;
+    const fin = /(?:final price|grand total|total to pay|amount due|amount paid|you paid|you'll pay|お支払い金額|支払金額|totale da pagare|montant total|gesamtbetrag|importe total|결제 ?금액|총 ?결제)/gi; let f;
     while ((f = fin.exec(text))) { const from = f.index + f[0].length; const a = all.find(x => x.i >= from && x.i - from <= 40); if (a) return { price: a.v, cur: a.cur, total: true }; }
     let pool = [...near]; if (!pool.length) { if (!loose) return null; pool = all; }
-    const yen = pool.filter(a => a.cur === 'jpy'); if (yen.length) pool = yen;
+    const yen = pool.filter(a => a.cur === localCur()); if (yen.length) pool = yen;
     const pick = pool.reduce((a, b) => (b.v > a.v ? b : a));
     return { price: pick.v, cur: pick.cur, total: true };
   }
   // GPS written out: N 034° 25.375, E 134° 3.326 (degrees and minutes), 34°25'22.5"N 134°03'19.6"E, or 34.42292, 134.05543
   function gps(text) {
-    const D = '[°º˚]', inJp = (lat, lng) => lat > 20 && lat < 46.5 && lng > 122 && lng < 154 ? { lat: +lat.toFixed(6), lng: +lng.toFixed(6) } : null;
+    const D = '[°º˚]', inJp = (lat, lng) => Math.abs(lat) <= 85 && Math.abs(lng) <= 180 && (lat || lng) ? { lat: +lat.toFixed(6), lng: +lng.toFixed(6) } : null;
     const dm = (d, m, s) => +d + (+m || 0) / 60 + (+s || 0) / 3600;
     let m = new RegExp(`([NS])\\s*(\\d{1,3})\\s*${D}\\s*(\\d{1,2}(?:\\.\\d+)?)\\s*['′]?\\s*(?:(\\d{1,2}(?:\\.\\d+)?)\\s*["″])?[\\s,;/]*([EW])\\s*(\\d{1,3})\\s*${D}\\s*(\\d{1,2}(?:\\.\\d+)?)\\s*['′]?\\s*(?:(\\d{1,2}(?:\\.\\d+)?)\\s*["″])?`, 'i').exec(text);
     if (m) return inJp(dm(m[2], m[3], m[4]) * (/s/i.test(m[1]) ? -1 : 1), dm(m[6], m[7], m[8]) * (/w/i.test(m[5]) ? -1 : 1));
     m = new RegExp(`(\\d{1,3})\\s*${D}\\s*(\\d{1,2})\\s*['′]\\s*(\\d{1,2}(?:\\.\\d+)?)\\s*["″]?\\s*([NS])[\\s,;/]+(\\d{1,3})\\s*${D}\\s*(\\d{1,2})\\s*['′]\\s*(\\d{1,2}(?:\\.\\d+)?)\\s*["″]?\\s*([EW])`, 'i').exec(text);
     if (m) return inJp(dm(m[1], m[2], m[3]), dm(m[5], m[6], m[7]));
-    m = /(?:gps|coordinates|lat(?:itude)?\s*[,/&]?\s*(?:lng|lon(?:gitude)?)|location)\s*[:：]?\s*(-?\d{1,2}\.\d{3,})\s*[,\s]\s*(-?\d{2,3}\.\d{3,})/i.exec(text);
+    m = /(?:gps|coordinates|lat(?:itude)?\s*[,/&]?\s*(?:lng|lon(?:gitude)?)|location)\s*[:：]?\s*(-?\d{1,2}\.\d{3,})\s*[,\s]\s*(-?\d{1,3}\.\d{3,})/i.exec(text);
     return m ? inJp(+m[1], +m[2]) : null;
   }
   const REF_RE = [
@@ -194,7 +217,7 @@ const TP = (() => {
         if (jpAddr && !JP.test(v)) { jpLine = t; continue; }
         if (/[,\-]$/.test(v) || /\b\d{3}-\d{4}\b|japan$/i.test(t)) v = v + (/-$/.test(v) ? '' : ' ') + t; else break;
       }
-      const parts = v.split(/[,，、]/).map(p => p.trim()).filter(p => p && !/^(?:japan|日本)$/i.test(p));
+      const parts = v.split(/[,，、]/).map(p => p.trim()).filter(p => p && !/^(?:japan|日本)$/i.test(p) && !(typeof COUNTRY === 'function' && p.toLowerCase() === COUNTRY().name.toLowerCase()));
       const pc = (parts.find(p => /^〒?\s?\d{3}-\d{4}$/.test(p)) || '').replace(/^〒\s?/, '');
       const jp = parts.filter(p => JP.test(p)), en = parts.filter(p => !JP.test(p) && !/^〒?\s?\d{3}-\d{4}$/.test(p));
       if (en.length >= 2 && !out.address) out.address = parts.join(', ');
@@ -208,7 +231,7 @@ const TP = (() => {
       }
     }
     // an unlabelled address line: ends in Japan, or carries a Japanese postcode
-    for (const l of text.split('\n')) { const v = l.trim(); if (v.length >= 12 && v.length <= 160 && !JP.test(v) && /,/.test(v) && (/,\s*Japan\.?$/i.test(v) || /\b\d{3}-\d{4}\b/.test(v)) && !/\b(?:check|total|paid|booking|confirmation)\b/i.test(v)) { if (!out.address) out.address = v.replace(/,\s*Japan\.?$/i, ''); break; } }
+    for (const l of text.split('\n')) { const v = l.trim(); if (v.length >= 12 && v.length <= 160 && !JP.test(v) && /,/.test(v) && (/,\s*Japan\.?$/i.test(v) || /\b\d{3}-\d{4}\b/.test(v) || (typeof COUNTRY === 'function' && TRIP_COUNTRY() !== 'JP' && new RegExp(',\\s*' + COUNTRY().name + '\\.?$', 'i').test(v))) && !/\b(?:check|total|paid|booking|confirmation)\b/i.test(v)) { if (!out.address) out.address = v.replace(/,\s*Japan\.?$/i, '').replace(typeof COUNTRY === 'function' ? new RegExp(',\\s*' + COUNTRY().name + '\\.?$', 'i') : /$^/, ''); break; } }
     if (!out.addressJa) { const j = /〒\s?\d{3}-?\d{4}\s*([^\n]{6,80})/.exec(text); if (j && JP.test(j[1])) out.addressJa = j[0].replace(/\s+/g, ' ').trim(); }
     if (out.addressJa && /[,，、]/.test(out.addressJa)) {
       const parts = out.addressJa.split(/[,，、]/).map(p => p.trim()).filter(p => p && !/^(?:japan|日本)$/i.test(p));
@@ -313,6 +336,220 @@ const TP = (() => {
   return Object.assign({}, TPB, { dates, fromText, kindOf, siteOf, docName, fileRef, gps, GENERIC });
 })();
 
+/* ---------- countries ----------
+   Each trip is set in one country. The country decides the local currency, the language for place names,
+   addresses and phrases, the font for that script, what the visited-places book is called and how it looks,
+   and where the map starts. Japan is the original and stays exactly as it was. */
+
+// currencies: how to write them, and how they appear in booking text
+const CUR = {
+  JPY: { name: 'Yen', pre: '¥', dec: 0, re: ['¥', '￥', 'JPY', '円', 'yen'] },
+  KRW: { name: 'Won', pre: '₩', dec: 0, re: ['₩', 'KRW', '원'] },
+  TWD: { name: 'NT dollars', pre: 'NT$', dec: 0, re: ['NT$', 'NTD', 'TWD', '元'] },
+  THB: { name: 'Baht', pre: '฿', dec: 0, re: ['฿', 'THB', 'baht', 'บาท'] },
+  VND: { name: 'Dong', pre: '₫', dec: 0, re: ['₫', 'VND', 'đ'] },
+  IDR: { name: 'Rupiah', pre: 'Rp ', dec: 0, re: ['Rp', 'IDR'] },
+  EUR: { name: 'Euro', pre: '€', dec: 2, re: ['€', 'EUR'] },
+  GBP: { name: 'Pounds', pre: '£', dec: 2, re: ['£', 'GBP'] },
+  USD: { name: 'US dollars', pre: 'US$', dec: 2, re: ['US$', 'USD', '$'] },
+  NZD: { name: 'NZ dollars', pre: 'NZ$', dec: 2, re: ['NZ$', 'NZD', '$'] },
+  AUD: { name: 'Australian dollars', pre: 'A$', dec: 2, re: ['A$', 'AU$', 'AUD', '$'] },
+  CAD: { name: 'Canadian dollars', pre: 'C$', dec: 2, re: ['C$', 'CAD', '$'] },
+  SGD: { name: 'Singapore dollars', pre: 'S$', dec: 2, re: ['S$', 'SGD', '$'] }
+};
+// where the travellers come from: the currency they think in
+const HOMES = ['AUD', 'NZD', 'USD', 'GBP', 'EUR', 'CAD', 'SGD'];
+
+// the visited-places book: East Asia keeps ink stamps at stations and sights, Europe and Southeast Asia send
+// postcards, and national parks in the US and New Zealand sell embroidered patches
+const BOOKS = {
+  stamps: { title: 'Stamps', one: 'stamp', done: 'Stamped', count: 'stamped' },
+  postcards: { title: 'Postcards', one: 'postcard', done: 'Postcard kept', count: 'postcards' },
+  patches: { title: 'Patches', one: 'patch', done: 'Patch earned', count: 'patches' }
+};
+
+const BASIC = (hello, thanks, sorry, noSpeak) => ['Basics', [hello, thanks, sorry, noSpeak]];
+const COUNTRIES = {
+  JP: {
+    name: 'Japan', cur: 'JPY', lang: 'ja', langName: 'Japanese', font: 'Noto Sans JP', book: 'stamps', bbox: [129.4, 31.0, 145.9, 45.5],
+    sample: { local: '直島', addr: '香川県香川郡直島町琴弾地', price: '27660', title: 'Japan 2026' },
+    bookNote: 'Stations in Japan keep an ink stamp for travellers to collect.',
+    driver: ['Please take us here', 'この住所までお願いします'],
+    phrases: [
+      BASIC(['Hello', 'こんにちは', 'konnichiwa'], ['Thank you very much', 'ありがとうございます', 'arigatō gozaimasu'], ['Excuse me, sorry', 'すみません', 'sumimasen'], ["I don't understand Japanese", '日本語がわかりません', 'nihongo ga wakarimasen']),
+      ['Getting around', [['Where is the station?', '駅はどこですか？', 'eki wa doko desu ka?'], ['Please take me to this address', 'この住所までお願いします', 'kono jūsho made onegai shimasu'], ['Does this train stop at this station?', 'この電車はこの駅に止まりますか？', 'kono densha wa kono eki ni tomarimasu ka?'], ['Two adults, please', '大人二人お願いします', 'otona futari onegai shimasu']]],
+      ['Eating', [['A table for two, please', '二人です', 'futari desu'], ['This one, please', 'これをください', 'kore o kudasai'], ['The bill, please', 'お会計お願いします', 'okaikei onegai shimasu'], ['Can I pay by card?', 'カードで払えますか？', 'kādo de haraemasu ka?'], ['That was delicious, thank you', 'ごちそうさまでした', 'gochisōsama deshita']]],
+      ['Staying', [['We have a reservation', '予約しています', 'yoyaku shite imasu'], ['Could you keep our luggage?', '荷物を預かってもらえますか？', 'nimotsu o azukatte moraemasu ka?'], ['What time is check-out?', 'チェックアウトは何時ですか？', 'chekkuauto wa nanji desu ka?']]],
+      ['Craft and art', [['Is it OK to sketch here?', 'ここでスケッチしてもいいですか？', 'koko de suketchi shite mo ii desu ka?'], ['Is there a yarn shop nearby?', 'この近くに毛糸屋さんはありますか？', 'kono chikaku ni keitoya-san wa arimasu ka?'], ['May I take a photo?', '写真を撮ってもいいですか？', 'shashin o totte mo ii desu ka?'], ['Is this handmade?', 'これは手作りですか？', 'kore wa tezukuri desu ka?']]]
+    ]
+  },
+  KR: {
+    name: 'South Korea', cur: 'KRW', lang: 'ko', langName: 'Korean', font: 'Noto Sans KR', book: 'stamps', bbox: [124.6, 33.1, 131.0, 38.6],
+    sample: { local: '경복궁', addr: '서울특별시 종로구 사직로 161', price: '120000', title: 'Korea 2027' },
+    bookNote: "Korea's stamp tours leave an ink stamp at sights, markets and stations for travellers to collect.",
+    driver: ['Please take us here', '이 주소로 가 주세요'],
+    phrases: [
+      BASIC(['Hello', '안녕하세요', 'annyeonghaseyo'], ['Thank you', '감사합니다', 'gamsahamnida'], ['Excuse me (to get attention)', '저기요', 'jeogiyo'], ["I don't speak Korean", '한국어를 못해요', 'hangugeoreul mothaeyo']),
+      ['Getting around', [['Where is the station?', '역이 어디예요?', 'yeogi eodiyeyo?'], ['Please take me to this address', '이 주소로 가 주세요', 'i jusoro ga juseyo'], ['Two adults, please', '어른 두 명이요', 'eoreun du myeongiyo'], ['How much is it?', '얼마예요?', 'eolmayeyo?']]],
+      ['Eating', [['A table for two, please', '두 명이요', 'du myeongiyo'], ['This one, please', '이거 주세요', 'igeo juseyo'], ['The bill, please', '계산해 주세요', 'gyesanhae juseyo'], ['Can I pay by card?', '카드 돼요?', 'kadeu dwaeyo?'], ['That was delicious, thank you', '잘 먹었습니다', 'jal meogeotseumnida']]],
+      ['Staying', [['We have a reservation', '예약했어요', 'yeyakhaesseoyo'], ['Could you keep our luggage?', '짐 좀 맡아 주시겠어요?', 'jim jom mata jusigesseoyo?'], ['What time is check-out?', '체크아웃은 몇 시예요?', 'chekeuauseun myeot siyeyo?']]]
+    ]
+  },
+  TW: {
+    name: 'Taiwan', cur: 'TWD', lang: 'zh-Hant', langName: 'Chinese', font: 'Noto Sans TC', book: 'stamps', bbox: [119.3, 21.8, 122.1, 25.4],
+    sample: { local: '九份', addr: '新北市瑞芳區基山街', price: '3200', title: 'Taiwan 2027' },
+    bookNote: 'Stations and sights across Taiwan keep commemorative stamps for travellers to collect.',
+    driver: ['Please take us here', '請帶我到這個地址'],
+    phrases: [
+      BASIC(['Hello', '你好', 'nǐ hǎo'], ['Thank you', '謝謝', 'xièxie'], ['Excuse me, sorry', '不好意思', 'bù hǎo yìsi'], ["I don't speak Chinese", '我不會說中文', 'wǒ bú huì shuō zhōngwén']),
+      ['Getting around', [['Where is the station?', '車站在哪裡？', 'chēzhàn zài nǎlǐ?'], ['Please take me to this address', '請帶我到這個地址', 'qǐng dài wǒ dào zhège dìzhǐ'], ['Two tickets, please', '兩張票，謝謝', 'liǎng zhāng piào, xièxie'], ['How much is it?', '多少錢？', 'duōshǎo qián?']]],
+      ['Eating', [['A table for two, please', '兩位', 'liǎng wèi'], ['This one, please', '我要這個', 'wǒ yào zhège'], ['The bill, please', '請幫我結帳', 'qǐng bāng wǒ jiézhàng'], ['Can I pay by card?', '可以刷卡嗎？', 'kěyǐ shuākǎ ma?'], ['Delicious!', '很好吃', 'hěn hǎochī']]],
+      ['Staying', [['We have a reservation', '我們有訂房', 'wǒmen yǒu dìngfáng'], ['Could you keep our luggage?', '可以寄放行李嗎？', 'kěyǐ jìfàng xínglǐ ma?'], ['What time is check-out?', '幾點退房？', 'jǐ diǎn tuìfáng?']]]
+    ]
+  },
+  TH: {
+    name: 'Thailand', cur: 'THB', lang: 'th', langName: 'Thai', font: 'Noto Sans Thai', book: 'postcards', bbox: [97.3, 5.6, 105.7, 20.5],
+    sample: { local: 'วัดอรุณ', addr: 'ถนนอรุณอมรินทร์ บางกอกใหญ่ กรุงเทพฯ', price: '2400', title: 'Thailand 2027' },
+    bookNote: 'Every place you visit becomes a postcard in this stack.',
+    driver: ['Please take us here', 'ช่วยไปที่อยู่นี้ด้วย'],
+    phrases: [
+      BASIC(['Hello (men say khrap, women kha)', 'สวัสดีครับ/ค่ะ', 'sawatdee khrap / kha'], ['Thank you', 'ขอบคุณครับ/ค่ะ', 'khop khun khrap / kha'], ['Excuse me, sorry', 'ขอโทษครับ/ค่ะ', 'kho thot khrap / kha'], ["I can't speak Thai", 'พูดภาษาไทยไม่ได้', 'phut phasa thai mai dai']),
+      ['Getting around', [['Where is the station?', 'สถานีอยู่ที่ไหน', 'sathani yu thi nai?'], ['Please take me to this address', 'ช่วยไปที่อยู่นี้ด้วย', 'chuai pai thi yu ni duai'], ['Two tickets, please', 'ขอตั๋วสองใบ', 'kho tua song bai'], ['How much is it?', 'เท่าไหร่', 'thao rai?']]],
+      ['Eating', [['A table for two, please', 'สองคน', 'song khon'], ['This one, please', 'เอาอันนี้', 'ao an ni'], ['Not spicy, please', 'ไม่เผ็ด', 'mai phet'], ['The bill, please', 'เช็คบิลด้วย', 'chek bin duai'], ['Can I pay by card?', 'จ่ายบัตรได้ไหม', 'jai bat dai mai?'], ['Delicious!', 'อร่อยมาก', 'aroi mak']]],
+      ['Staying', [['We have a reservation', 'จองไว้แล้ว', 'jong wai laeo'], ['Could you keep our luggage?', 'ฝากกระเป๋าได้ไหม', 'fak krapao dai mai?'], ['What time is check-out?', 'เช็คเอาท์กี่โมง', 'chek ao ki mong?']]]
+    ]
+  },
+  VN: {
+    name: 'Vietnam', cur: 'VND', lang: 'vi', langName: 'Vietnamese', font: '', book: 'postcards', bbox: [102.1, 8.4, 109.5, 23.4],
+    sample: { local: 'Phố cổ Hội An', addr: 'Trần Phú, Minh An, Hội An', price: '1200000', title: 'Vietnam 2027' },
+    bookNote: 'Every place you visit becomes a postcard in this stack.',
+    driver: ['Please take us here', 'Làm ơn đưa tôi đến địa chỉ này'],
+    phrases: [
+      BASIC(['Hello', 'Xin chào', 'sin chow'], ['Thank you', 'Cảm ơn', 'gahm uhn'], ['Excuse me, sorry', 'Xin lỗi', 'sin loy'], ["I don't speak Vietnamese", 'Tôi không nói được tiếng Việt', 'toy khom noy duoc tieng viet']),
+      ['Getting around', [['Where is the station?', 'Ga ở đâu?', 'gah uh dow?'], ['Please take me to this address', 'Làm ơn đưa tôi đến địa chỉ này', 'lahm uhn doo-uh toy den dee-uh chee nay'], ['Two tickets, please', 'Cho tôi hai vé', 'chaw toy hai veh'], ['How much is it?', 'Bao nhiêu tiền?', 'bow nyew tien?']]],
+      ['Eating', [['A table for two, please', 'Bàn cho hai người', 'bahn chaw hai ngoo-oi'], ['This one, please', 'Cho tôi cái này', 'chaw toy kai nay'], ['The bill, please', 'Tính tiền', 'tin tien'], ['Can I pay by card?', 'Tôi trả bằng thẻ được không?', 'toy cha bang teh duoc khom?'], ['Delicious!', 'Ngon quá', 'ngon kwah']]],
+      ['Staying', [['We have a reservation', 'Chúng tôi đã đặt phòng', 'choong toy dah dat fong'], ['Could you keep our luggage?', 'Gửi hành lý được không?', 'goo-ee hahn lee duoc khom?'], ['What time is check-out?', 'Mấy giờ trả phòng?', 'may zuh cha fong?']]]
+    ]
+  },
+  ID: {
+    name: 'Indonesia', cur: 'IDR', lang: 'id', langName: 'Indonesian', font: '', book: 'postcards', bbox: [95.0, -11.0, 141.0, 6.1],
+    sample: { local: 'Pura Tanah Lot', addr: 'Jl. Raya Tanah Lot, Tabanan, Bali', price: '1500000', title: 'Bali 2027' },
+    bookNote: 'Every place you visit becomes a postcard in this stack.',
+    driver: ['Please take us here', 'Tolong antar saya ke alamat ini'],
+    phrases: [
+      BASIC(['Hello', 'Halo', 'HAH-loh'], ['Thank you', 'Terima kasih', 'tuh-REE-mah KAH-see'], ['Excuse me', 'Permisi', 'per-MEE-see'], ["I don't speak Indonesian", 'Saya tidak bisa bahasa Indonesia', 'SAH-yah TEE-dahk BEE-sah bah-HAH-sah']),
+      ['Getting around', [['Where is the station?', 'Stasiun di mana?', 'STAH-see-oon dee MAH-nah?'], ['Please take me to this address', 'Tolong antar saya ke alamat ini', 'TOH-long AHN-tar SAH-yah kuh ah-LAH-mat EE-nee'], ['Two tickets, please', 'Dua tiket, ya', 'DOO-ah TEE-ket, yah'], ['How much is it?', 'Berapa harganya?', 'buh-RAH-pah har-GAH-nyah?']]],
+      ['Eating', [['A table for two, please', 'Meja untuk dua orang', 'MEH-jah OON-took DOO-ah OH-rahng'], ['This one, please', 'Yang ini, ya', 'yahng EE-nee, yah'], ['Not spicy, please', 'Tidak pedas', 'TEE-dahk puh-DAHS'], ['The bill, please', 'Minta bon, ya', 'MIN-tah bon, yah'], ['Can I pay by card?', 'Bisa bayar pakai kartu?', 'BEE-sah BAH-yar PAH-kai KAR-too?'], ['Delicious!', 'Enak sekali', 'EH-nahk suh-KAH-lee']]],
+      ['Staying', [['We have a reservation', 'Kami sudah reservasi', 'KAH-mee SOO-dah reh-ser-VAH-see'], ['Could you keep our luggage?', 'Bisa titip tas?', 'BEE-sah TEE-tip tahs?'], ['What time is check-out?', 'Check-out jam berapa?', 'check-out jahm buh-RAH-pah?']]]
+    ]
+  },
+  IT: {
+    name: 'Italy', cur: 'EUR', lang: 'it', langName: 'Italian', font: '', book: 'postcards', bbox: [6.6, 36.6, 18.5, 47.1],
+    sample: { local: 'Ponte Vecchio', addr: 'Ponte Vecchio, 50125 Firenze FI', price: '180', title: 'Italy 2027' },
+    bookNote: 'Every place you visit becomes a postcard in this stack.',
+    driver: ['Please take us here', 'Mi porti a questo indirizzo, per favore'],
+    phrases: [
+      BASIC(['Hello, good morning', 'Buongiorno', 'bwon-JOR-noh'], ['Thank you', 'Grazie', 'GRAHT-see-eh'], ['Excuse me, sorry', 'Scusi', 'SKOO-zee'], ["I don't speak Italian", 'Non parlo italiano', 'non PAR-loh ee-tah-lee-AH-noh']),
+      ['Getting around', [['Where is the station?', "Dov'è la stazione?", 'doh-VEH lah staht-see-OH-neh?'], ['Please take me to this address', 'Mi porti a questo indirizzo, per favore', 'mee POR-tee ah KWEH-stoh een-dee-REET-soh, pehr fah-VOH-reh'], ['Two tickets, please', 'Due biglietti, per favore', 'DOO-eh beel-YET-tee, pehr fah-VOH-reh'], ['How much is it?', 'Quanto costa?', 'KWAN-toh KOH-stah?']]],
+      ['Eating', [['A table for two, please', 'Un tavolo per due, per favore', 'oon TAH-voh-loh pehr DOO-eh'], ['This one, please', 'Questo, per favore', 'KWEH-stoh, pehr fah-VOH-reh'], ['The bill, please', 'Il conto, per favore', 'eel KON-toh, pehr fah-VOH-reh'], ['Can I pay by card?', 'Posso pagare con la carta?', 'POS-soh pah-GAH-reh kon lah KAR-tah?'], ['Delicious!', 'Buonissimo!', 'bwoh-NEES-see-moh']]],
+      ['Staying', [['We have a reservation', 'Abbiamo una prenotazione', 'ab-BYAH-moh OO-nah preh-noh-taht-see-OH-neh'], ['Could you keep our luggage?', 'Possiamo lasciare i bagagli?', 'pos-SYAH-moh lah-SHAH-reh ee bah-GAHL-yee?'], ['What time is check-out?', "A che ora è il check-out?", 'ah keh OH-rah eh eel check-out?']]]
+    ]
+  },
+  FR: {
+    name: 'France', cur: 'EUR', lang: 'fr', langName: 'French', font: '', book: 'postcards', bbox: [-5.2, 41.3, 9.6, 51.1],
+    sample: { local: 'Musée d’Orsay', addr: "1 Rue de la Légion d'Honneur, 75007 Paris", price: '160', title: 'France 2027' },
+    bookNote: 'Every place you visit becomes a postcard in this stack.',
+    driver: ['Please take us here', "À cette adresse, s'il vous plaît"],
+    phrases: [
+      BASIC(['Hello', 'Bonjour', 'bon-ZHOOR'], ['Thank you very much', 'Merci beaucoup', 'mair-SEE boh-KOO'], ['Excuse me, sorry', 'Excusez-moi', 'ex-koo-zay MWAH'], ["I don't speak French", 'Je ne parle pas français', 'zhuh nuh parl pah frahn-SAY']),
+      ['Getting around', [['Where is the station?', 'Où est la gare ?', 'oo ay lah GAR?'], ['Please take me to this address', "À cette adresse, s'il vous plaît", 'ah set ah-DRESS, seel voo PLAY'], ['Two tickets, please', "Deux billets, s'il vous plaît", 'duh bee-YAY, seel voo PLAY'], ['How much is it?', "C'est combien ?", 'say kom-BYAN?']]],
+      ['Eating', [['A table for two, please', "Une table pour deux, s'il vous plaît", 'oon TAH-bluh poor DUH'], ['This one, please', "Celui-ci, s'il vous plaît", 'suh-lwee-SEE, seel voo PLAY'], ['The bill, please', "L'addition, s'il vous plaît", 'lah-dee-SYON, seel voo PLAY'], ['Can I pay by card?', 'Je peux payer par carte ?', 'zhuh puh pay-YAY par KART?'], ['That was delicious', "C'était délicieux", 'say-tay day-lee-SYUH']]],
+      ['Staying', [['We have a reservation', 'Nous avons une réservation', 'noo zah-VON oon ray-zair-vah-SYON'], ['Could you keep our luggage?', 'Pouvez-vous garder nos bagages ?', 'poo-vay VOO gar-DAY noh bah-GAZH?'], ['What time is check-out?', 'À quelle heure faut-il libérer la chambre ?', 'ah kel UR foh-TEEL lee-bay-RAY lah SHAHM-bruh?']]]
+    ]
+  },
+  ES: {
+    name: 'Spain', cur: 'EUR', lang: 'es', langName: 'Spanish', font: '', book: 'postcards', bbox: [-9.4, 36.0, 3.4, 43.8],
+    sample: { local: 'Sagrada Família', addr: 'Carrer de Mallorca, 401, 08013 Barcelona', price: '150', title: 'Spain 2027' },
+    bookNote: 'Every place you visit becomes a postcard in this stack.',
+    driver: ['Please take us here', 'A esta dirección, por favor'],
+    phrases: [
+      BASIC(['Hello', 'Hola', 'OH-lah'], ['Thank you very much', 'Muchas gracias', 'MOO-chas GRAH-thyahs'], ['Excuse me, sorry', 'Perdón', 'pehr-DON'], ["I don't speak Spanish", 'No hablo español', 'noh AH-bloh es-pahn-YOL']),
+      ['Getting around', [['Where is the station?', '¿Dónde está la estación?', 'DON-deh es-TAH lah es-tah-THYON?'], ['Please take me to this address', 'A esta dirección, por favor', 'ah ES-tah dee-rek-THYON, por fah-VOR'], ['Two tickets, please', 'Dos billetes, por favor', 'dos bee-YEH-tes, por fah-VOR'], ['How much is it?', '¿Cuánto cuesta?', 'KWAN-toh KWES-tah?']]],
+      ['Eating', [['A table for two, please', 'Una mesa para dos, por favor', 'OO-nah MEH-sah PAH-rah dos'], ['This one, please', 'Este, por favor', 'ES-teh, por fah-VOR'], ['The bill, please', 'La cuenta, por favor', 'lah KWEN-tah, por fah-VOR'], ['Can I pay by card?', '¿Puedo pagar con tarjeta?', 'PWEH-doh pah-GAR kon tar-HEH-tah?'], ['Delicious!', '¡Muy rico!', 'mwee REE-koh']]],
+      ['Staying', [['We have a reservation', 'Tenemos una reserva', 'teh-NEH-mos OO-nah reh-SER-vah'], ['Could you keep our luggage?', '¿Nos puede guardar el equipaje?', 'nos PWEH-deh gwar-DAR el eh-kee-PAH-heh?'], ['What time is check-out?', '¿A qué hora hay que dejar la habitación?', 'ah keh OH-rah ai keh deh-HAR lah ah-bee-tah-THYON?']]]
+    ]
+  },
+  PT: {
+    name: 'Portugal', cur: 'EUR', lang: 'pt', langName: 'Portuguese', font: '', book: 'postcards', bbox: [-9.6, 36.9, -6.1, 42.2],
+    sample: { local: 'Torre de Belém', addr: 'Av. Brasília, 1400-038 Lisboa', price: '130', title: 'Portugal 2027' },
+    bookNote: 'Every place you visit becomes a postcard in this stack.',
+    driver: ['Please take us here', 'Para esta morada, por favor'],
+    phrases: [
+      BASIC(['Hello', 'Olá', 'oh-LAH'], ['Thank you (said by a man / a woman)', 'Obrigado / Obrigada', 'oh-bree-GAH-doo / oh-bree-GAH-dah'], ['Excuse me, sorry', 'Desculpe', 'desh-KOOLP'], ["I don't speak Portuguese", 'Não falo português', 'nown FAH-loo poor-too-GAYSH']),
+      ['Getting around', [['Where is the station?', 'Onde é a estação?', 'OND eh ah shtah-SOWN?'], ['Please take me to this address', 'Para esta morada, por favor', 'PAH-rah ESH-tah moo-RAH-dah, poor fah-VOR'], ['Two tickets, please', 'Dois bilhetes, por favor', 'doysh beel-YETSH, poor fah-VOR'], ['How much is it?', 'Quanto custa?', 'KWAN-too KOOSH-tah?']]],
+      ['Eating', [['A table for two, please', 'Uma mesa para dois, por favor', 'OO-mah MAY-zah PAH-rah doysh'], ['This one, please', 'Este, por favor', 'ESHT, poor fah-VOR'], ['The bill, please', 'A conta, por favor', 'ah KON-tah, poor fah-VOR'], ['Can I pay by card?', 'Posso pagar com cartão?', 'POS-soo pah-GAR kom kar-TOWN?'], ['That was delicious', 'Estava delicioso', 'shtah-vah deh-lee-see-OH-zoo']]],
+      ['Staying', [['We have a reservation', 'Temos uma reserva', 'TAY-moosh OO-mah reh-ZER-vah'], ['Could you keep our luggage?', 'Pode guardar a nossa bagagem?', 'POD gwar-DAR ah NOS-sah bah-GAH-zhaym?'], ['What time is check-out?', 'A que horas é o check-out?', 'ah kee OR-ash eh oo check-out?']]]
+    ]
+  },
+  GR: {
+    name: 'Greece', cur: 'EUR', lang: 'el', langName: 'Greek', font: 'Noto Sans', book: 'postcards', bbox: [19.3, 34.8, 29.7, 41.8],
+    sample: { local: 'Οία', addr: 'Οία 847 02, Σαντορίνη', price: '220', title: 'Greece 2027' },
+    bookNote: 'Every place you visit becomes a postcard in this stack.',
+    driver: ['Please take us here', 'Σε αυτή τη διεύθυνση, παρακαλώ'],
+    phrases: [
+      BASIC(['Hello', 'Γεια σας', 'YAH sas'], ['Thank you very much', 'Ευχαριστώ πολύ', 'ef-ha-ree-STO po-LEE'], ['Excuse me, sorry', 'Συγγνώμη', 'seeg-NO-mee'], ["I don't speak Greek", 'Δεν μιλάω ελληνικά', 'then mee-LAO e-lee-nee-KA']),
+      ['Getting around', [['Where is the port?', 'Πού είναι το λιμάνι;', 'poo EE-ne to lee-MA-nee?'], ['Please take me to this address', 'Σε αυτή τη διεύθυνση, παρακαλώ', 'se af-TEE tee thee-EF-theen-see, pa-ra-ka-LO'], ['Two tickets, please', 'Δύο εισιτήρια, παρακαλώ', 'THEE-o ee-see-TEE-ree-a, pa-ra-ka-LO'], ['How much is it?', 'Πόσο κάνει;', 'PO-so KA-nee?']]],
+      ['Eating', [['A table for two, please', 'Ένα τραπέζι για δύο, παρακαλώ', 'E-na tra-PE-zee ya THEE-o'], ['This one, please', 'Αυτό, παρακαλώ', 'af-TO, pa-ra-ka-LO'], ['The bill, please', 'Τον λογαριασμό, παρακαλώ', 'ton lo-gar-ya-ZMO, pa-ra-ka-LO'], ['Can I pay by card?', 'Μπορώ να πληρώσω με κάρτα;', 'bo-RO na plee-RO-so me KAR-ta?'], ['Delicious!', 'Πολύ νόστιμο!', 'po-LEE NO-stee-mo']]],
+      ['Staying', [['We have a reservation', 'Έχουμε κράτηση', 'E-hoo-me KRA-tee-see'], ['Could you keep our luggage?', 'Μπορείτε να κρατήσετε τις βαλίτσες μας;', 'bo-REE-te na kra-TEE-se-te tees va-LEE-tses mas?'], ['What time is check-out?', 'Τι ώρα είναι το check-out;', 'tee O-ra EE-ne to check-out?']]]
+    ]
+  },
+  DE: {
+    name: 'Germany', cur: 'EUR', lang: 'de', langName: 'German', font: '', book: 'postcards', bbox: [5.9, 47.3, 15.0, 55.1],
+    sample: { local: 'Schloss Neuschwanstein', addr: 'Neuschwansteinstraße 20, 87645 Schwangau', price: '140', title: 'Germany 2027' },
+    bookNote: 'Every place you visit becomes a postcard in this stack.',
+    driver: ['Please take us here', 'Zu dieser Adresse, bitte'],
+    phrases: [
+      BASIC(['Hello', 'Guten Tag', 'GOO-ten tahk'], ['Thank you very much', 'Danke schön', 'DAHN-keh shurn'], ['Excuse me, sorry', 'Entschuldigung', 'ent-SHOOL-dee-goong'], ["I don't speak German", 'Ich spreche kein Deutsch', 'ikh SHPREH-kheh kine doytch']),
+      ['Getting around', [['Where is the station?', 'Wo ist der Bahnhof?', 'voh ist dair BAHN-hohf?'], ['Please take me to this address', 'Zu dieser Adresse, bitte', 'tsoo DEE-zer ah-DRESS-eh, BIT-teh'], ['Two tickets, please', 'Zwei Fahrkarten, bitte', 'tsvai FAR-kar-ten, BIT-teh'], ['How much is it?', 'Wie viel kostet das?', 'vee feel KOS-tet dahs?']]],
+      ['Eating', [['A table for two, please', 'Einen Tisch für zwei, bitte', 'EYE-nen tish fuer tsvai, BIT-teh'], ['This one, please', 'Das hier, bitte', 'dahs heer, BIT-teh'], ['The bill, please', 'Die Rechnung, bitte', 'dee REKH-noong, BIT-teh'], ['Can I pay by card?', 'Kann ich mit Karte zahlen?', 'kahn ikh mit KAR-teh TSAH-len?'], ['Delicious!', 'Sehr lecker!', 'zair LEK-er']]],
+      ['Staying', [['We have a reservation', 'Wir haben reserviert', 'veer HAH-ben reh-zer-VEERT'], ['Could you keep our luggage?', 'Können Sie unser Gepäck aufbewahren?', 'KUR-nen zee OON-zer geh-PECK OWF-beh-vah-ren?'], ['What time is check-out?', 'Wann ist der Check-out?', 'vahn ist dair check-out?']]]
+    ]
+  },
+  GB: {
+    name: 'United Kingdom', cur: 'GBP', lang: 'en', langName: '', font: '', book: 'postcards', bbox: [-8.2, 49.9, 1.8, 58.7], words: true,
+    sample: { local: '', addr: '', price: '140', title: 'UK 2027' },
+    bookNote: 'Every place you visit becomes a postcard in this stack.',
+    driver: ['Please take us here', 'Please take us to this address'],
+    phrases: [
+      ['Words that differ', [['Toilet', 'Loo', 'Toilets are often signed WC'], ['Bottle shop', 'Off-licence', 'Or just "the offie"'], ['Potato chips', 'Crisps', 'Hot chips are just "chips"'], ['A line of people', 'Queue', 'Queuing is taken seriously']]],
+      ['Getting around', [['Return ticket', 'Return', 'A one-way ticket is a "single"'], ['Tap on and off', 'Contactless', 'Tap the same card at both ends of a Tube trip'], ['Mind the gap', 'Mind the gap', 'Between the train and the platform'], ['Ground floor', 'Ground floor', 'Then the first floor is one up, as at home']]],
+      ['Eating and drinking', [['Can we get the bill, please?', 'Could we have the bill, please?', 'Service is often added; check before tipping'], ['A round', "It's my round", 'Taking turns buying drinks at the pub'], ['Takeaway', 'Takeaway', 'Same as at home']]]
+    ]
+  },
+  US: {
+    name: 'United States', cur: 'USD', lang: 'en', langName: '', font: '', book: 'patches', bbox: [-124.8, 24.4, -66.9, 49.4], words: true,
+    sample: { local: '', addr: '', price: '220', title: 'USA 2027' },
+    bookNote: 'Like the embroidered patches sold at every national park, each place you visit earns one.',
+    driver: ['Please take us here', 'Please take us to this address'],
+    phrases: [
+      ['Words that differ', [['The bill', 'The check', '"Can we get the check?"'], ['Toilet', 'Restroom', '"Where\'s the restroom?"'], ['Petrol', 'Gas', 'Pumps are often pay-first'], ['Lift', 'Elevator', 'The first floor is the ground floor']]],
+      ['Eating', [['Tipping', '18 to 20 percent', 'Expected at sit-down restaurants and bars'], ['Takeaway', 'To go', '"For here or to go?"'], ['Hot chips', 'Fries', 'Chips are potato chips'], ['Entrée', 'Main course', 'An entrée is the main, not a starter']]],
+      ['Getting around', [['Sales tax', 'Added at the till', 'Shelf prices usually leave it out'], ['Footpath', 'Sidewalk', 'Cross at the crosswalk']]]
+    ]
+  },
+  NZ: {
+    name: 'New Zealand', cur: 'NZD', lang: 'en', langName: '', font: '', book: 'patches', bbox: [166.3, -47.4, 178.6, -34.3], words: true,
+    sample: { local: '', addr: '', price: '220', title: 'New Zealand 2027' },
+    bookNote: 'Like the embroidered patches sold at every national park, each place you visit earns one.',
+    driver: ['Please take us here', 'Please take us to this address'],
+    phrases: [
+      ['Māori greetings', [['Hello', 'Kia ora', 'KEE-ah OR-ah'], ['Thank you', 'Kia ora / Ngā mihi', 'NGAH MEE-hee'], ['Good, well done', 'Ka pai', 'kah PIE']]],
+      ['Words that differ', [['Corner shop', 'Dairy', 'Open late, sells most things'], ['Thongs', 'Jandals', 'Same thing'], ['Esky', 'Chilly bin', 'Same thing'], ['Swimmers', 'Togs', 'Same thing'], ['Bushwalking', 'Tramping', 'Huts book out in summer'], ['Holiday house', 'Bach', 'Said "batch"; a crib in the south']]]
+    ]
+  }
+};
+const COUNTRY_LIST = Object.entries(COUNTRIES).map(([code, c]) => ({ code, name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
+
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -324,6 +561,13 @@ const PWA = !!window.TABI_PWA;
 const DEFAULTS = null;
 const isPhone = () => innerWidth <= 820;
 const CLIP_PAGE = 'https://zyfb4jn58y-arch.github.io/tabi/clip.html';
+const TRIP_COUNTRY = () => (typeof TRIP !== 'undefined' && COUNTRIES[TRIP.country] && TRIP.country) || 'JP';
+const COUNTRY = () => COUNTRIES[TRIP_COUNTRY()];
+const BOOK = () => BOOKS[COUNTRY().book] || BOOKS.stamps;
+// the name of a place in the local language, as the map tiles store it (name:ja, name:ko, name:zh-Hant…)
+// map labels: Japanese for Japan (as it always was), elsewhere each place's own local name
+const LOCAL_NAME_KEY = () => TRIP_COUNTRY() === 'JP' ? 'name:ja' : 'name';
+const LANG = () => COUNTRY().langName;
 
 /* ---------- dates ---------- */
 const pad = n => String(n).padStart(2, '0');
@@ -333,10 +577,10 @@ const parseD = s => { const [y, m, d] = s.split('-').map(Number); return new Dat
 const addDays = (s, n) => { const d = parseD(s); d.setDate(d.getDate() + n); return isoOf(d); };
 const diffDays = (a, b) => Math.round((parseD(b) - parseD(a)) / 864e5);
 const today = () => isoOf(new Date());
-let TRIP = { start: '', end: '' }, TRIP_DAYS = [], NIGHTS = [];
+let TRIP = { start: '', end: '', country: 'JP' }, TRIP_DAYS = [], NIGHTS = [];
 function setTrip(start, end) {
   if (!isIso(start) || !isIso(end) || end <= start || diffDays(start, end) > 120) { const t = today(); start = t; end = addDays(t, 14); }
-  TRIP = { start, end }; TRIP_DAYS = []; for (let s = start; s <= end; s = addDays(s, 1)) TRIP_DAYS.push(s); NIGHTS = TRIP_DAYS.slice(0, -1);
+  TRIP = { start, end, country: TRIP.country || 'JP' }; TRIP_DAYS = []; for (let s = start; s <= end; s = addDays(s, 1)) TRIP_DAYS.push(s); NIGHTS = TRIP_DAYS.slice(0, -1);
 }
 const fmtDay = s => parseD(s).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
 const fmtShort = s => parseD(s).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
@@ -442,30 +686,13 @@ const RAIL = [
 ];
 
 
-/* ---------- phrases ---------- */
-const PHRASES = [
-  ['Basics', [
-    ['Hello', 'こんにちは', 'konnichiwa'], ['Thank you very much', 'ありがとうございます', 'arigatō gozaimasu'],
-    ['Excuse me, sorry', 'すみません', 'sumimasen'], ["I don't understand Japanese", '日本語がわかりません', 'nihongo ga wakarimasen']]],
-  ['Getting around', [
-    ['Where is the station?', '駅はどこですか？', 'eki wa doko desu ka?'], ['Please take me to this address', 'この住所までお願いします', 'kono jūsho made onegai shimasu'],
-    ['Does this train stop at this station?', 'この電車はこの駅に止まりますか？', 'kono densha wa kono eki ni tomarimasu ka?'], ['Two adults, please', '大人二人お願いします', 'otona futari onegai shimasu']]],
-  ['Eating', [
-    ['A table for two, please', '二人です', 'futari desu'], ['This one, please', 'これをください', 'kore o kudasai'],
-    ['The bill, please', 'お会計お願いします', 'okaikei onegai shimasu'], ['Can I pay by card?', 'カードで払えますか？', 'kādo de haraemasu ka?'],
-    ['That was delicious, thank you', 'ごちそうさまでした', 'gochisōsama deshita']]],
-  ['Staying', [
-    ['We have a reservation', '予約しています', 'yoyaku shite imasu'], ['Could you keep our luggage?', '荷物を預かってもらえますか？', 'nimotsu o azukatte moraemasu ka?'],
-    ['What time is check-out?', 'チェックアウトは何時ですか？', 'chekkuauto wa nanji desu ka?']]],
-  ['Craft and art', [
-    ['Is it OK to sketch here?', 'ここでスケッチしてもいいですか？', 'koko de suketchi shite mo ii desu ka?'], ['Is there a yarn shop nearby?', 'この近くに毛糸屋さんはありますか？', 'kono chikaku ni keitoya-san wa arimasu ka?'],
-    ['May I take a photo?', '写真を撮ってもいいですか？', 'shashin o totte mo ii desu ka?'], ['Is this handmade?', 'これは手作りですか？', 'kore wa tezukuri desu ka?']]]
-];
+/* ---------- phrases: from the trip's country (countries.js) ---------- */
+const PHRASES_NOW = () => COUNTRY().phrases;
 
 /* ---------- state ---------- */
 const S = {
   mode: 'loading', places: new Map(), spend: new Map(), photos: new Map(), rawSettings: {},
-  settings: { rate: 113, budget: 0, names: ['Me', 'Partner'], title: 'Our trip', start: '', end: '' },
+  settings: { rate: 113, budget: 0, names: ['Me', 'Partner'], title: 'Our trip', start: '', end: '', country: 'JP', home: 'AUD' },
   sel: null, tab: 'today', view: 'map', filter: 'week', day: null, cur: 'jpy',
   meId: null, me: null, canWrite: true, profiles: {}, peers: [], follow: null,
   ideas: null, picking: null, playing: false, playDay: null, ready: false, xpend: null
@@ -479,8 +706,13 @@ let railOn = pref('rail') !== 'off';
 
 const nightsOf = p => p.start && p.end ? Math.max(0, diffDays(p.start, p.end)) : 0;
 const hasLoc = p => typeof p.lat === 'number' && typeof p.lng === 'number' && isFinite(p.lat) && isFinite(p.lng);
-const yen = n => '¥' + Math.round(n).toLocaleString('en-AU');
-const aud = n => 'A$' + Math.round(n / (S.settings.rate || 113)).toLocaleString('en-AU');
+/* money: amounts are kept in the trip's local currency. `yen` writes the local currency and `aud` the travellers'
+   home currency (their original names, from the first trip). The rate is local units for one home unit. */
+const CL = () => CUR[COUNTRY().cur] || CUR.JPY, CH = () => CUR[S.settings.home] || CUR.AUD;
+const roundL = v => { const f = 10 ** CL().dec; return Math.round(v * f) / f; };
+const fmtCur = (v, c, whole) => { const r = whole ? Math.round(v) : Math.round(v * 10 ** c.dec) / 10 ** c.dec; const frac = !whole && c.dec && !Number.isInteger(r); return c.pre + r.toLocaleString('en-AU', { minimumFractionDigits: frac ? c.dec : 0, maximumFractionDigits: frac ? c.dec : 0 }); };
+const yen = n => fmtCur(n, CL());
+const aud = n => fmtCur(n / (S.settings.rate || 1), CH(), true);
 const money = n => S.cur === 'aud' ? aud(n) : yen(n);
 const other = n => S.cur === 'aud' ? yen(n) : aud(n);
 const totalOf = p => p.price == null ? null : (p.kind === 'stay' ? p.price * Math.max(1, nightsOf(p)) : p.price);
@@ -516,18 +748,30 @@ function norm(id, d) {
 }
 function normSpend(id, d) {
   d = d || {};
-  return { id, amount: numv(d.amount) > 0 ? Math.round(d.amount) : 0, cat: CATS[d.cat] ? d.cat : 'other', payer: d.payer === 1 ? 1 : 0,
+  return { id, amount: numv(d.amount) > 0 ? roundL(d.amount) : 0, cat: CATS[d.cat] ? d.cat : 'other', payer: d.payer === 1 ? 1 : 0,
     date: isIso(d.date) ? d.date : today(), note: str(d.note).slice(0, 120), by: str(d.by), at: numv(d.at) || 0 };
 }
 function applySettings(st) {
   st = st && typeof st === 'object' ? st : {}; const d = DEFAULTS || {};
   const nm = Array.isArray(st.names) ? st.names : [];
+  const country = COUNTRIES[st.country] ? st.country : d.country || 'JP', home = HOMES.includes(st.home) ? st.home : d.home || 'AUD';
   S.settings = {
-    rate: numv(st.rate) > 20 && st.rate < 400 ? st.rate : d.rate || 113, budget: numv(st.budget) >= 0 && st.budget ? st.budget : d.budget || 0,
+    country, home,
+    rate: numv(st.rate) > 0 && st.rate < 1e6 ? st.rate : country === 'JP' ? d.rate || 113 : 0, budget: numv(st.budget) >= 0 && st.budget ? st.budget : d.budget || 0,
     names: [str(nm[0]).trim() || (d.names && d.names[0]) || 'Me', str(nm[1]).trim() || (d.names && d.names[1]) || 'Partner'],
     title: str(st.title).trim() || d.title || 'Our trip', start: isIso(st.start) ? st.start : d.start || '', end: isIso(st.end) ? st.end : d.end || ''
   };
+  TRIP.country = S.settings.country; applyCountry();
   setTrip(S.settings.start, S.settings.end);
+}
+// the script, font and words for the trip's country
+let fontLoaded = 'Noto Sans JP'; // already in the page
+function applyCountry() {
+  const c = COUNTRY(), root = document.documentElement;
+  if (c.font && fontLoaded !== c.font) { fontLoaded = c.font; const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(c.font)}:wght@500;700;900&display=swap`; document.head.appendChild(l); }
+  root.style.setProperty('--font-ja', `${c.font ? `"${c.font}",` : ''}"Noto Sans JP","Hiragino Kaku Gothic ProN",system-ui,sans-serif`);
+  root.lang = 'en-AU';
+  if (typeof onCountry === 'function') onCountry();
 }
 applySettings({});
 
@@ -661,19 +905,49 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = fal
 const mapEl = $('#map'), mapSel = d3.select(mapEl);
 const prefsObj = GEO.prefs.objects.prefs;
 const MAIN = { type: 'MultiPoint', coordinates: [[129.4, 31.0], [145.9, 45.5]] };
-const base = d3.geoConicConformal().parallels([33, 44]).rotate([-137, 0]).fitSize([1000, 1000], MAIN);
-const gpath = d3.geoPath(base);
+// Japan keeps its own projection and prefecture outlines. Other countries use a Mercator view of the
+// country's box over world outlines, which load once (a file in the phone app, the web otherwise).
+let base = d3.geoConicConformal().parallels([33, 44]).rotate([-137, 0]).fitSize([1000, 1000], MAIN);
+let gpath = d3.geoPath(base);
 let T = d3.zoomIdentity, W = 800, H = 600;
-const P = (lng, lat) => { const xy = base([lng, lat]); return xy ? [T.applyX(xy[0]), T.applyY(xy[1])] : [-9999, -9999]; };
-const unP = (x, y) => base.invert(T.invert([x, y]));
-(function drawBase() {
-  d3.select('#land').attr('d', gpath(topojson.feature(GEO.prefs, prefsObj)));
-  d3.select('#borders').attr('d', gpath(topojson.mesh(GEO.prefs, prefsObj, (a, b) => a !== b)));
-  d3.select('#coast').attr('d', gpath(topojson.mesh(GEO.prefs, prefsObj, (a, b) => a === b)));
-  d3.select('#lake').attr('d', gpath(topojson.feature(GEO.lake, GEO.lake.objects.lakes)));
-  d3.select('#rail path').attr('d', gpath({ type: 'MultiLineString', coordinates: RAIL.map(l => l.map(([a, b]) => [b, a])) }));
-  mapEl.classList.toggle('no-rail', !railOn);
-})();
+// GL is the detailed street map (mapgl.js) once it's running; until then, and as the offline fallback, it's the simple map.
+// The simple map's scale k=1 is about zoom 5.4 on the detailed one.
+let GL = null, K0 = 5.4;
+const zk = () => GL ? 2 ** (GL.getZoom() - K0) : T.k;
+const P = (lng, lat) => { if (GL) { const p = GL.project([lng, lat]); return [p.x, p.y]; } const xy = base([lng, lat]); return xy ? [T.applyX(xy[0]), T.applyY(xy[1])] : [-9999, -9999]; };
+const unP = (x, y) => { if (GL) { const ll = GL.unproject([x, y]); return [ll.lng, ll.lat]; } return base.invert(T.invert([x, y])); };
+let baseFor = '', WORLD = null, worldP = null;
+const WORLD_URL = PWA ? 'vendor/world-50m.json' : 'https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-50m.json';
+function loadWorld() { return worldP || (worldP = fetch(WORLD_URL).then(r => { if (!r.ok) throw 0; return r.json(); }).then(j => (WORLD = j)).catch(() => { worldP = null; return null; })); }
+function drawBase() {
+  const cc = TRIP_COUNTRY(); if (baseFor === cc && cc === 'JP') return;
+  if (cc === 'JP') {
+    base = d3.geoConicConformal().parallels([33, 44]).rotate([-137, 0]).fitSize([1000, 1000], MAIN); gpath = d3.geoPath(base); K0 = 5.4; baseFor = 'JP';
+    d3.select('#land').attr('d', gpath(topojson.feature(GEO.prefs, prefsObj)));
+    d3.select('#borders').attr('d', gpath(topojson.mesh(GEO.prefs, prefsObj, (a, b) => a !== b)));
+    d3.select('#coast').attr('d', gpath(topojson.mesh(GEO.prefs, prefsObj, (a, b) => a === b)));
+    d3.select('#lake').attr('d', gpath(topojson.feature(GEO.lake, GEO.lake.objects.lakes)));
+    d3.select('#rail path').attr('d', gpath({ type: 'MultiLineString', coordinates: RAIL.map(l => l.map(([a, b]) => [b, a])) }));
+    mapEl.classList.toggle('no-rail', !railOn); mapEl.classList.remove('world');
+    return;
+  }
+  const b = COUNTRY().bbox, box = { type: 'MultiPoint', coordinates: [[b[0], b[1]], [b[2], b[3]]] };
+  base = d3.geoMercator().rotate([-(b[0] + b[2]) / 2, 0]).fitSize([1000, 1000], box); gpath = d3.geoPath(base);
+  K0 = Math.log2(2 * Math.PI * base.scale() / 512); baseFor = cc;
+  mapEl.classList.add('no-rail', 'world'); d3.select('#rail path').attr('d', null); d3.select('#lake').attr('d', null);
+  const paint = w => {
+    if (!w || baseFor !== cc) return;
+    const o = w.objects.countries, pad = 18, near = g => { const bb = d3.geoBounds(topojson.feature(w, g)); return bb[1][0] >= b[0] - pad && bb[0][0] <= b[2] + pad && bb[1][1] >= b[1] - pad && bb[0][1] <= b[3] + pad; };
+    const keep = { type: 'GeometryCollection', geometries: o.geometries.filter(near) };
+    d3.select('#land').attr('d', gpath(topojson.feature(w, keep)));
+    d3.select('#borders').attr('d', gpath(topojson.mesh(w, keep, (x, y) => x !== y)));
+    d3.select('#coast').attr('d', gpath(topojson.mesh(w, keep, (x, y) => x === y)));
+    if (S.ready) positionAll();
+  };
+  d3.select('#land').attr('d', null); d3.select('#borders').attr('d', null); d3.select('#coast').attr('d', null);
+  if (WORLD) paint(WORLD); else loadWorld().then(paint);
+}
+drawBase();
 const zoomer = d3.zoom().scaleExtent([0.45, 110])
   .filter(e => !e.target.closest('.ctl,.pop,.card,.banner') && (!e.ctrlKey || e.type === 'wheel') && !e.button)
   .on('zoom', e => { T = e.transform; d3.select('#world').attr('transform', T); positionAll(); onViewChange(); });
@@ -681,6 +955,11 @@ mapSel.call(zoomer).on('dblclick.zoom', null);
 function measure() { W = mapEl.clientWidth || 800; H = mapEl.clientHeight || 600; }
 function fitTransform(pts, { pad = 70, maxK = 16 } = {}) {
   measure();
+  if (GL) {
+    const ok = pts.filter(p => p && isFinite(p.lng) && isFinite(p.lat)); if (!ok.length) return null;
+    const lo = ok.map(p => p.lng), la = ok.map(p => p.lat);
+    return { gl: 'fit', b: [[Math.min(...lo), Math.min(...la)], [Math.max(...lo), Math.max(...la)]], pad: Math.min(pad, W / 4, H / 4), maxZoom: maxK >= 12 ? 15.5 : Math.min(15.5, K0 + Math.log2(maxK) + 2) };
+  }
   const xy = pts.map(p => base([p.lng, p.lat])).filter(Boolean);
   if (!xy.length) return T;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -690,25 +969,35 @@ function fitTransform(pts, { pad = 70, maxK = 16 } = {}) {
   return d3.zoomIdentity.translate(W / 2, H / 2).scale(k).translate(-(x0 + x1) / 2, -(y0 + y1) / 2);
 }
 function zoomTo(t, dur = 750) {
+  if (t && t.gl) return glGo(t, dur);
+  if (GL || !t) return Promise.resolve();
   return new Promise(res => {
     if (REDUCE || dur <= 0) { mapSel.interrupt().call(zoomer.transform, t); res(); return; }
     mapSel.transition().duration(dur).ease(d3.easeCubicInOut).call(zoomer.transform, t).on('end', res).on('interrupt', res);
   });
 }
-const japanView = () => fitTransform([{ lng: 129.6, lat: 31.2 }, { lng: 145.6, lat: 45.4 }], { pad: 20 });
-function fitPlaces(dur = 750) { const pts = [...S.places.values()].filter(hasLoc); return zoomTo(pts.length ? fitTransform(pts, { maxK: 10 }) : japanView(), dur); }
+// the whole trip country
+function countryView() {
+  if (TRIP_COUNTRY() === 'JP') return fitTransform([{ lng: 129.6, lat: 31.2 }, { lng: 145.6, lat: 45.4 }], { pad: 20 });
+  const b = COUNTRY().bbox; return fitTransform([{ lng: b[0], lat: b[1] }, { lng: b[2], lat: b[3] }], { pad: 20, maxK: 1.5 });
+}
+const japanView = countryView;
+function fitPlaces(dur = 750) { const pts = [...S.places.values()].filter(hasLoc); return zoomTo(pts.length ? fitTransform(pts, { maxK: 10 }) : countryView(), dur); }
 function flyToPlace(p, dur = 750, k) {
   if (!hasLoc(p)) return Promise.resolve();
   measure();
-  const kk = k || Math.max(T.k, 14); const [x, y] = base([p.lng, p.lat]);
   const open = !$('#card').hidden, ph = isPhone();
   const cx = open && !ph ? W * 0.64 : W / 2, cy = open ? (ph ? H * 0.22 : H * 0.36) : H / 2;
+  if (GL) return glGo({ gl: 'at', c: [p.lng, p.lat], z: k ? K0 + Math.log2(k) : Math.max(GL.getZoom(), 15), off: [cx - W / 2, cy - H / 2] }, dur);
+  const kk = k || Math.max(T.k, 14); const [x, y] = base([p.lng, p.lat]);
   return zoomTo(d3.zoomIdentity.translate(cx, cy).scale(kk).translate(-x, -y), dur);
 }
-$('#zin').onclick = () => mapSel.transition().duration(REDUCE ? 0 : 300).call(zoomer.scaleBy, 1.8);
-$('#zout').onclick = () => mapSel.transition().duration(REDUCE ? 0 : 300).call(zoomer.scaleBy, 1 / 1.8);
+$('#zin').onclick = () => GL ? GL.zoomIn({ duration: REDUCE ? 0 : 300 }) : mapSel.transition().duration(REDUCE ? 0 : 300).call(zoomer.scaleBy, 1.8);
+$('#zout').onclick = () => GL ? GL.zoomOut({ duration: REDUCE ? 0 : 300 }) : mapSel.transition().duration(REDUCE ? 0 : 300).call(zoomer.scaleBy, 1 / 1.8);
+// a view centred on a point at the simple map's scale k, for following someone else's view
+function viewAt(c, k) { k = Math.max(0.45, Math.min(110, k)); if (GL) return { gl: 'at', c, z: K0 + Math.log2(k) }; measure(); const [x, y] = base(c); return d3.zoomIdentity.translate(W / 2, H / 2).scale(k).translate(-x, -y); }
 $('#zfit').onclick = () => fitPlaces();
-new ResizeObserver(() => { const ow = W, oh = H; measure(); if (S.ready && ow && oh && W && H && (ow !== W || oh !== H)) mapSel.call(zoomer.translateBy, (W - ow) / 2 / T.k, (H - oh) / 2 / T.k); positionAll(); }).observe(mapEl);
+new ResizeObserver(() => { const ow = W, oh = H; measure(); if (GL) { GL.resize(); positionAll(); return; } if (S.ready && ow && oh && W && H && (ow !== W || oh !== H)) mapSel.call(zoomer.translateBy, (W - ow) / 2 / T.k, (H - oh) / 2 / T.k); positionAll(); }).observe(mapEl);
 
 /* labels */
 const labelsEl = $('#labels'), LABELS = [];
@@ -766,8 +1055,8 @@ function renderGhosts() {
 const place = (el, x, y) => { el.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`; };
 function positionAll() {
   if (!S.ready) return;
-  const k = T.k;
-  for (const L of LABELS) { if (L.test(k)) { const [x, y] = P(L.lng, L.lat); const on = x > -80 && y > -40 && x < W + 80 && y < H + 40; L.el.hidden = !on; if (on) place(L.el, x, y); } else L.el.hidden = true; }
+  const k = zk();
+  for (const L of LABELS) { if (GL || baseFor !== 'JP') { L.el.hidden = true; continue; } if (L.test(k)) { const [x, y] = P(L.lng, L.lat); const on = x > -80 && y > -40 && x < W + 80 && y < H + 40; L.el.hidden = !on; if (on) place(L.el, x, y); } else L.el.hidden = true; }
   clusterEls.forEach(c => c.remove()); clusterEls = [];
   const items = [];
   for (const el of pinEls.values()) { const p = el._p; const [x, y] = P(p.lng, p.lat); el._x = x; el._y = y; el._c = false; items.push(el); }
@@ -801,9 +1090,10 @@ function positionAll() {
 }
 function renderRoute() {
   const r = d3.select('#route'); r.selectAll('*').remove();
-  const st = routeStays(); if (st.length < 2) return;
-  const t = today(), done = [], todo = [];
+  const st = routeStays(), t = today(), done = [], todo = [];
   for (let i = 1; i < st.length; i++) (st[i].start <= t ? done : todo).push([[st[i - 1].lng, st[i - 1].lat], [st[i].lng, st[i].lat]]);
+  glRoute(done, todo);
+  if (GL || st.length < 2) return;
   const ml = c => gpath({ type: 'MultiLineString', coordinates: c });
   r.append('path').attr('class', 'halo').attr('d', ml(done.concat(todo)));
   if (done.length) r.append('path').attr('class', 'done').attr('d', ml(done));
@@ -819,12 +1109,15 @@ mapEl.addEventListener('click', e => {
   const pin = e.target.closest('.pin'); if (pin) { closePop(); select(pin.dataset.id, { fly: false }); return; }
   const cl = e.target.closest('.cluster'); if (cl) { closePop(); zoomTo(fitTransform(cl._ids.map(id => S.places.get(id)), { maxK: Math.max(T.k * 3, 12) })); return; }
   const gh = e.target.closest('.ghost'); if (gh) { const it = S.ideas.items[+gh.dataset.idea]; toast(it.name + (it.why ? ': ' + it.why : '')); return; }
-  const r = mapEl.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top;
+  if (GL) return; // the detailed map reports its own clicks, so a drag never counts as a tap
+  const r = mapEl.getBoundingClientRect(); bgClick(e.clientX - r.left, e.clientY - r.top);
+});
+function bgClick(x, y) {
   const ll = unP(x, y); if (!ll) return;
   if (S.picking) { const cb = S.picking.cb; S.picking = null; mapEl.classList.remove('picking'); hideBanner(); cb(ll); return; }
   if (!canEdit()) return;
   openPop(ll, x, y);
-});
+}
 function openPop(ll, x, y) {
   closePop();
   const near = nearestPlaceName(ll[1], ll[0]);
@@ -847,7 +1140,7 @@ const GAZ = [
   ...GEO.towns.map(([n, lat, lng, pi]) => ({ n, ja: '', lat, lng, sub: GEO.prefNames[pi] || '', f: fold(n) }))
 ];
 function searchGaz(q) {
-  const f = fold(q); if (!f) return [];
+  const f = fold(q); if (!f || TRIP_COUNTRY() !== 'JP') return [];
   const out = [], seen = new Set();
   for (const pass of [g => g.f.startsWith(f), g => g.f.includes(f)]) for (const g of GAZ) {
     if (out.length >= 8) break; const key = g.n + g.lat; if (seen.has(key)) continue; if (pass(g)) { seen.add(key); out.push(g); }
@@ -855,20 +1148,228 @@ function searchGaz(q) {
   return out;
 }
 function nearestPlaceName(lat, lng) {
+  if (TRIP_COUNTRY() !== 'JP') return glNearName(lat, lng);
   let best = null, bd = Infinity; const c = Math.cos(lat * Math.PI / 180);
   for (const g of GAZ) { const d = (g.lat - lat) ** 2 + ((g.lng - lng) * c) ** 2; if (d < bd) { bd = d; best = g; } }
-  return best && Math.sqrt(bd) * 111 < 5 ? best.n : ''; // islands sit close together, so only name somewhere really nearby
+  return best && Math.sqrt(bd) * 111 < 5 ? best.n : glNearName(lat, lng); // islands sit close together, so only name somewhere really nearby
+}
+// places by name from OpenStreetMap (Photon), inside the trip's country, in English and the local language
+async function searchOnline(q) {
+  if (!q || q.length < 3 || navigator.onLine === false) return [];
+  const b = COUNTRY().bbox, box = [b[0] - 1, b[1] - 1, b[2] + 1, b[3] + 1].map(v => v.toFixed(2)).join(',');
+  const url = l => `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8&bbox=${box}${l ? '&lang=' + l : ''}`;
+  const get = async u => { const c = new AbortController(), t = setTimeout(() => c.abort(), 6000); try { const r = await fetch(u, { signal: c.signal }); return r.ok ? await r.json() : null; } catch (e) { return null; } finally { clearTimeout(t); } };
+  const [en, loc] = await Promise.all([get(url('en')), COUNTRY().lang === 'en' ? null : get(url(''))]);
+  if (!en || !Array.isArray(en.features)) return [];
+  const local = new Map(((loc && loc.features) || []).map(f => [(f.properties || {}).osm_type + (f.properties || {}).osm_id, (f.properties || {}).name]));
+  return en.features.map(f => {
+    const p = f.properties || {}, c = (f.geometry || {}).coordinates || [], n = p.name || [p.housenumber, p.street].filter(Boolean).join(' ');
+    const ja = local.get(p.osm_type + p.osm_id) || '';
+    return { n, ja: ja && ja !== n ? ja : '', lat: +c[1], lng: +c[0], sub: [p.city || p.county || p.state, p.osm_value && p.osm_value !== 'yes' ? p.osm_value.replace(/_/g, ' ') : ''].filter(x => x && x !== n).join(' · '), online: true };
+  }).filter(g => g.n && isFinite(g.lat) && isFinite(g.lng));
 }
 function parseCoords(s) {
-  const m = s.match(/@(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || s.match(/[?&](?:q|query|ll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || s.match(/^\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{2,3}\.\d+)\s*$/);
+  const m = s.match(/@(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || s.match(/[?&](?:q|query|ll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || s.match(/^\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*$/);
   if (!m) return null; const lat = +m[1], lng = +m[2];
-  return lat > 20 && lat < 46.5 && lng > 122 && lng < 154 ? { lat, lng } : null;
+  return Math.abs(lat) <= 85 && Math.abs(lng) <= 180 && (lat || lng) ? { lat, lng } : null;
+}
+
+/* ---------- detailed map: streets, stations, buildings and places, in Tabi's colours ----------
+   MapLibre draws OpenStreetMap data (vector tiles from OpenFreeMap, free and keyless) underneath Tabi's own
+   pins, route and controls. It starts after the simple map is up. If it can't load (offline with nothing saved,
+   or blocked), the simple map stays, so the map always works. */
+const GLJS = PWA ? 'vendor/maplibre-gl.js' : 'https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.js';
+const GL_SRC = 'https://tiles.openfreemap.org/planet', GL_FONTS = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
+let glOn = pref('detail') !== 'off', glTried = false, glP = null;
+let GL_ROUTE = { type: 'FeatureCollection', features: [] };
+
+function loadGLJS() {
+  if (window.maplibregl) return Promise.resolve(window.maplibregl);
+  if (!glP) glP = new Promise((res, rej) => {
+    const sc = document.createElement('script'); sc.src = GLJS; sc.async = true;
+    sc.onload = () => window.maplibregl ? res(window.maplibregl) : rej(new Error('maplibre'));
+    sc.onerror = () => { glP = null; sc.remove(); rej(new Error('maplibre')); };
+    document.head.appendChild(sc);
+  });
+  return glP;
+}
+const isDark = () => document.documentElement.dataset.theme === 'dark' || (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+
+// the map style: colours come from Tabi's tokens, so it follows light and dark
+function glStyle() {
+  const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim(), dark = isDark();
+  const C = {
+    land: v('--land'), sea: v('--sea'), ink: v('--ink'), ink2: v('--ink-2'), ink3: v('--ink-3'), surface: v('--surface'),
+    blue: v('--blue'), blueInk: v('--blue-ink'), route: v('--route'), yellow: v('--yellow'), yink: v('--yellow-ink'), seaInk: v('--sea-ink'),
+    park: dark ? '#2b3252' : '#e1d4a3', wood: dark ? '#283049' : '#dacd98', build: dark ? '#30375a' : '#e7dab2', buildLine: dark ? '#3d456d' : '#d2c291',
+    road: dark ? '#3a4167' : '#fbf6e8', major: dark ? '#4c5582' : '#ffffff', casing: dark ? '#12152a' : 'rgba(27,29,46,0.30)', rail: dark ? '#a39d8a' : '#4c4a52'
+  };
+  const EN = ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']];
+  const LOCAL = ['coalesce', ['get', LOCAL_NAME_KEY()], ['get', 'name']];
+  // English first, with the local script underneath when it differs (Kyoto / 京都)
+  const NAME = ['case', ['!=', LOCAL, EN], ['format', EN, {}, '\n', {}, LOCAL, { 'font-scale': 0.8 }], EN];
+  const R = ['Noto Sans Regular'], Bd = ['Noto Sans Bold'], It = ['Noto Sans Italic'];
+  const halo = { 'text-halo-color': C.land, 'text-halo-width': 1.4, 'text-halo-blur': 0.4 };
+  const zi = (...s) => ['interpolate', ['linear'], ['zoom'], ...s];
+  const cls = (...c) => ['in', ['get', 'class'], ['literal', c]];
+  const omt = (id, type, layer, o) => ({ id, type, source: 'omt', 'source-layer': layer, ...o });
+  const SEE = cls('museum', 'attraction', 'art_gallery', 'castle', 'monument', 'place_of_worship', 'zoo', 'theatre', 'aquarium');
+  const FOOD = cls('restaurant', 'fast_food', 'cafe', 'bar', 'beer', 'ice_cream', 'bakery');
+  const SHOP = cls('grocery', 'shop', 'convenience', 'clothing_store', 'alcohol_shop');
+  const minor = cls('minor', 'service', 'track'), mid = cls('secondary', 'tertiary'), major = cls('motorway', 'trunk', 'primary');
+  const notTunnel = ['!=', ['get', 'brunnel'], 'tunnel'];
+  return {
+    version: 8, glyphs: GL_FONTS,
+    sources: {
+      omt: { type: 'vector', url: GL_SRC, attribution: '© OpenStreetMap contributors · OpenFreeMap · OpenMapTiles' },
+      tabiRail: { type: 'geojson', data: RAIL_GEO() },
+      tabiRoute: { type: 'geojson', data: GL_ROUTE }
+    },
+    layers: [
+      { id: 'bg', type: 'background', paint: { 'background-color': C.land } },
+      omt('wood', 'fill', 'landcover', { filter: cls('wood', 'forest'), paint: { 'fill-color': C.wood, 'fill-opacity': zi(6, 0.35, 12, 0.8) } }),
+      omt('grass', 'fill', 'landcover', { minzoom: 10, filter: cls('grass'), paint: { 'fill-color': C.park, 'fill-opacity': 0.5 } }),
+      omt('landuse', 'fill', 'landuse', { minzoom: 12, filter: cls('cemetery', 'hospital', 'school', 'university', 'college', 'stadium', 'pitch', 'playground'), paint: { 'fill-color': C.park, 'fill-opacity': 0.45 } }),
+      omt('park', 'fill', 'park', { paint: { 'fill-color': C.park, 'fill-opacity': zi(8, 0.5, 13, 0.9) } }),
+      omt('water', 'fill', 'water', { filter: notTunnel, paint: { 'fill-color': C.sea } }),
+      omt('river', 'line', 'waterway', { minzoom: 8, filter: notTunnel, paint: { 'line-color': C.sea, 'line-width': zi(8, 0.6, 14, 2, 18, 6) } }),
+      omt('pref', 'line', 'boundary', { minzoom: 5, filter: ['all', ['==', ['get', 'admin_level'], 4], ['!=', ['get', 'maritime'], 1]], paint: { 'line-color': C.ink3, 'line-opacity': 0.55, 'line-width': 1, 'line-dasharray': [2, 3] } }),
+      omt('country', 'line', 'boundary', { filter: ['all', ['==', ['get', 'admin_level'], 2], ['!=', ['get', 'maritime'], 1]], paint: { 'line-color': C.ink2, 'line-width': 1.2 } }),
+      omt('building', 'fill', 'building', { minzoom: 14, paint: { 'fill-color': C.build, 'fill-outline-color': C.buildLine, 'fill-opacity': zi(14, 0, 15, 1) } }),
+      omt('path', 'line', 'transportation', { minzoom: 15, filter: cls('path', 'pedestrian'), paint: { 'line-color': C.ink3, 'line-width': 1, 'line-dasharray': [2, 2], 'line-opacity': 0.7 } }),
+      omt('road-minor', 'line', 'transportation', { minzoom: 13, filter: minor, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': C.road, 'line-width': zi(13, 0.8, 16, 4, 18, 10) } }),
+      omt('road-mid-case', 'line', 'transportation', { minzoom: 10, filter: mid, layout: { 'line-join': 'round' }, paint: { 'line-color': C.casing, 'line-width': zi(10, 1.2, 14, 4.5, 18, 16) } }),
+      omt('road-mid', 'line', 'transportation', { minzoom: 10, filter: mid, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': C.road, 'line-width': zi(10, 0.6, 14, 3, 18, 13) } }),
+      omt('road-major-case', 'line', 'transportation', { minzoom: 6, filter: major, layout: { 'line-join': 'round' }, paint: { 'line-color': C.casing, 'line-width': zi(6, 0.8, 10, 2, 14, 6, 18, 20) } }),
+      omt('road-major', 'line', 'transportation', { minzoom: 6, filter: major, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': C.major, 'line-width': zi(6, 0.4, 10, 1.2, 14, 4.5, 18, 17) } }),
+      // railways read like a paper map: an ink line, broken with paper at street level
+      omt('rail', 'line', 'transportation', { minzoom: 8, filter: ['all', cls('rail', 'transit'), notTunnel], paint: { 'line-color': C.rail, 'line-width': zi(8, 0.8, 14, 1.8, 18, 3.2) } }),
+      omt('rail-hatch', 'line', 'transportation', { minzoom: 14, filter: ['all', cls('rail', 'transit'), notTunnel], paint: { 'line-color': C.land, 'line-width': zi(14, 0.8, 18, 1.8), 'line-dasharray': [3, 3] } }),
+      omt('subway', 'line', 'transportation', { minzoom: 11, filter: ['all', cls('rail', 'transit'), ['==', ['get', 'brunnel'], 'tunnel']], paint: { 'line-color': C.blue, 'line-opacity': 0.5, 'line-width': zi(11, 0.8, 16, 2), 'line-dasharray': [2, 1.5] } }),
+      omt('ferry', 'line', 'transportation', { minzoom: 7, filter: cls('ferry'), paint: { 'line-color': C.seaInk, 'line-width': zi(7, 0.8, 14, 1.6), 'line-dasharray': [3, 2] } }),
+      { id: 'tabi-rail', type: 'line', source: 'tabiRail', maxzoom: 11, layout: { visibility: railOn && RAIL_GEO().features.length ? 'visible' : 'none', 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': C.ink, 'line-opacity': 0.7, 'line-width': zi(4, 1.2, 10, 2.6) } },
+      { id: 'route-halo', type: 'line', source: 'tabiRoute', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': C.land, 'line-width': 7, 'line-opacity': 0.9 } },
+      { id: 'route-done', type: 'line', source: 'tabiRoute', filter: ['==', ['get', 's'], 'done'], layout: { 'line-cap': 'round' }, paint: { 'line-color': C.route, 'line-width': 3 } },
+      { id: 'route-todo', type: 'line', source: 'tabiRoute', filter: ['==', ['get', 's'], 'todo'], paint: { 'line-color': C.route, 'line-width': 3, 'line-dasharray': [1.6, 1.2] } },
+      omt('road-label', 'symbol', 'transportation_name', { minzoom: 14, filter: cls('primary', 'secondary', 'tertiary', 'trunk', 'minor'), layout: { 'symbol-placement': 'line', 'text-field': EN, 'text-font': R, 'text-size': zi(14, 10, 18, 13), 'text-max-angle': 30 }, paint: { 'text-color': C.ink2, ...halo } }),
+      omt('water-label', 'symbol', 'water_name', { layout: { 'text-field': EN, 'text-font': It, 'text-size': zi(4, 11, 10, 14), 'text-letter-spacing': 0.12, 'text-max-width': 8 }, paint: { 'text-color': C.seaInk } }),
+      // places to go: ultramarine for sights, ochre for food, quiet ink for shops
+      omt('poi-see', 'circle', 'poi', { minzoom: 14, filter: SEE, paint: { 'circle-color': C.blue, 'circle-radius': zi(14, 2.5, 17, 4.5), 'circle-stroke-color': C.land, 'circle-stroke-width': 1 } }),
+      omt('poi-food', 'circle', 'poi', { minzoom: 15, filter: FOOD, paint: { 'circle-color': C.yellow, 'circle-radius': zi(15, 2.2, 17, 4), 'circle-stroke-color': C.yink, 'circle-stroke-width': 1 } }),
+      omt('poi-shop', 'circle', 'poi', { minzoom: 16, filter: SHOP, paint: { 'circle-color': C.ink3, 'circle-radius': 2.5 } }),
+      omt('poi-label', 'symbol', 'poi', { minzoom: 15, filter: ['any', SEE, FOOD, SHOP, cls('park')], layout: { 'text-field': EN, 'text-font': R, 'text-size': 11, 'text-anchor': 'top', 'text-offset': [0, 0.6], 'text-max-width': 8, 'text-optional': true }, paint: { 'text-color': ['case', SEE, C.blueInk, FOOD, C.yink, C.ink2], ...halo } }),
+      // stations and ferry ports: a paper dot ringed in ink, like a transit map
+      omt('station', 'circle', 'poi', { minzoom: 11, filter: cls('railway', 'harbor', 'ferry_terminal'), paint: { 'circle-color': C.surface, 'circle-stroke-color': C.ink, 'circle-stroke-width': zi(11, 1.2, 16, 2), 'circle-radius': zi(11, 2.5, 16, 5) } }),
+      omt('station-label', 'symbol', 'poi', { minzoom: 12, filter: cls('railway', 'harbor', 'ferry_terminal'), layout: { 'text-field': NAME, 'text-font': Bd, 'text-size': zi(12, 10.5, 16, 13), 'text-anchor': 'top', 'text-offset': [0, 0.7], 'text-max-width': 9 }, paint: { 'text-color': C.ink, ...halo } }),
+      omt('suburb', 'symbol', 'place', { minzoom: 12, maxzoom: 17, filter: cls('suburb', 'quarter', 'neighbourhood'), layout: { 'text-field': EN, 'text-font': R, 'text-size': zi(12, 10, 16, 12), 'text-transform': 'uppercase', 'text-letter-spacing': 0.08, 'text-max-width': 7 }, paint: { 'text-color': C.ink2, ...halo } }),
+      omt('village', 'symbol', 'place', { minzoom: 10, filter: cls('village', 'hamlet', 'island'), layout: { 'text-field': NAME, 'text-font': R, 'text-size': zi(10, 11, 14, 13), 'text-max-width': 8 }, paint: { 'text-color': C.ink, ...halo } }),
+      omt('town', 'symbol', 'place', { minzoom: 8, filter: cls('town'), layout: { 'text-field': NAME, 'text-font': Bd, 'text-size': zi(8, 11, 14, 15), 'text-max-width': 8 }, paint: { 'text-color': C.ink, ...halo } }),
+      omt('city', 'symbol', 'place', { minzoom: 4, filter: cls('city'), layout: { 'text-field': NAME, 'text-font': Bd, 'text-size': zi(4, 11, 8, 14, 14, 18), 'text-max-width': 8, 'symbol-sort-key': ['get', 'rank'] }, paint: { 'text-color': C.ink, ...halo } })
+    ]
+  };
+}
+function RAIL_GEO() { return { type: 'FeatureCollection', features: TRIP_COUNTRY() === 'JP' ? [{ type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: RAIL.map(l => l.map(([a, b]) => [b, a])) } }] : [] }; }
+function glRoute(done, todo) {
+  const f = (legs, s) => legs.map(c => ({ type: 'Feature', properties: { s }, geometry: { type: 'LineString', coordinates: c } }));
+  GL_ROUTE = { type: 'FeatureCollection', features: [...f(done, 'done'), ...f(todo, 'todo')] };
+  const src = GL && GL.getSource('tabiRoute'); if (src) src.setData(GL_ROUTE);
+}
+function glGo(t, dur) {
+  return new Promise(res => {
+    if (!GL) { res(); return; }
+    const d = REDUCE ? 0 : dur; let done = false; const fin = () => { if (!done) { done = true; res(); } };
+    GL.once('moveend', fin); setTimeout(fin, d + 500);
+    if (t.gl === 'fit') {
+      const [a, b] = t.b;
+      if (Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6) GL.easeTo({ center: a, zoom: Math.min(t.maxZoom, 15), duration: d });
+      else GL.fitBounds(t.b, { padding: t.pad, maxZoom: t.maxZoom, duration: d });
+    } else GL.easeTo({ center: t.c, zoom: Math.max(2, Math.min(18, t.z)), offset: t.off || [0, 0], duration: d });
+  });
+}
+// start the detailed map; `loud` says so if it can't
+async function startGL(loud) {
+  if (GL || glTried || !glOn) return; glTried = true;
+  let m = null;
+  try {
+    const ml = await loadGLJS();
+    const el = $('#gl'); measure();
+    const c = unP(W / 2, H / 2) || [137, 36], z = K0 + Math.log2(T.k);
+    m = new ml.Map({ container: el, style: glStyle(), center: c, zoom: z, minZoom: 2, maxZoom: 18.5, attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, renderWorldCopies: false,
+      localIdeographFontFamily: "'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP','Apple SD Gothic Neo','Noto Sans KR','PingFang TC','Noto Sans TC',sans-serif", fadeDuration: 120 });
+    m.touchZoomRotate.disableRotation();
+    await new Promise((res, rej) => { const to = setTimeout(() => rej(new Error('timeout')), 15000); m.once('idle', () => { clearTimeout(to); res(); }); });
+    // only swap if real map data arrived (offline with nothing saved leaves an empty map)
+    const got = ['water', 'transportation', 'place', 'landcover', 'building'].reduce((n, l) => n + m.querySourceFeatures('omt', { sourceLayer: l }).length, 0);
+    if (!got) throw new Error('no tiles');
+    // carry over wherever the simple map is now
+    const c2 = unP(W / 2, H / 2); if (c2) m.jumpTo({ center: c2, zoom: K0 + Math.log2(T.k) });
+    GL = m;
+    mapSel.on('.zoom', null); // the detailed map pans and zooms now
+    m.on('move', positionAll); m.on('moveend', onViewChange);
+    m.on('click', e => bgClick(e.point.x, e.point.y));
+    mapEl.classList.add('gl');
+    renderRoute(); positionAll();
+  } catch (e) {
+    if (m) try { m.remove(); } catch (er) {}
+    GL = null; $('#gl').innerHTML = '';
+    if (loud) toast(navigator.onLine === false ? "The detailed map needs the internet the first time you look at an area. Using the simple map for now." : "The detailed map couldn't load. Using the simple map.");
+  }
+}
+function stopGL() {
+  if (!GL) return;
+  const c = GL.getCenter(), z = GL.getZoom();
+  GL.remove(); GL = null; $('#gl').innerHTML = ''; mapEl.classList.remove('gl');
+  mapSel.call(zoomer).on('dblclick.zoom', null);
+  mapSel.call(zoomer.transform, viewAt([c.lng, c.lat], 2 ** (z - K0)));
+  renderRoute(); positionAll();
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (GL) GL.setStyle(glStyle()); });
+addEventListener('online', () => { if (glOn && !GL) { glTried = false; startGL(); } });
+
+/* save the map around every place on the trip, so the detailed map works without signal (iPhone app only) */
+async function saveMapsOffline() {
+  if (!PWA) return;
+  if (navigator.onLine === false) { toast('Connect to the internet to save maps.'); return; }
+  let tpl;
+  try { const tj = await (await fetch(GL_SRC)).json(); tpl = tj.tiles[0]; } catch (e) { toast("Couldn't reach the map server. Try again later."); return; }
+  const pts = [...S.places.values()].filter(hasLoc); if (!pts.length) { toast('Add some places first.'); return; }
+  const tile = (lng, lat, z) => { const n = 2 ** z, r = lat * Math.PI / 180; return [Math.floor((lng + 180) / 360 * n), Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n)]; };
+  const want = new Set();
+  const add = (z, x, y) => want.add(`${z}/${x}/${y}`);
+  // the whole trip at overview zooms, then each place close up (tiles stop at zoom 14 and are drawn larger beyond)
+  const lo = pts.map(p => p.lng), la = pts.map(p => p.lat);
+  for (let z = 4; z <= 9; z++) { const [x0, y0] = tile(Math.min(...lo), Math.max(...la), z), [x1, y1] = tile(Math.max(...lo), Math.min(...la), z); for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) add(z, x, y); }
+  for (const p of pts) for (const [z, r] of [[10, 0], [11, 0], [12, 1], [13, 1], [14, 1]]) { const [x, y] = tile(p.lng, p.lat, z); for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) add(z, x + dx, y + dy); }
+  const urls = [...want].map(k => { const [z, x, y] = k.split('/'); return tpl.replace('{z}', z).replace('{x}', x).replace('{y}', y); });
+  for (const f of ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']) for (const r of ['0-255', '256-511', '8192-8447']) urls.push(GL_FONTS.replace('{fontstack}', encodeURIComponent(f)).replace('{range}', r));
+  let n = 0, bad = 0; toast(`Saving maps: 0 of ${urls.length}`);
+  const next = async () => { while (urls.length) { const u = urls.shift(); try { const r = await fetch(u); if (!r.ok) bad++; } catch (e) { bad++; } n++; if (n % 40 === 0) toast(`Saving maps: ${n} of ${n + urls.length}`); } };
+  await Promise.all([next(), next(), next(), next()]);
+  toast(bad ? `Saved most of the maps. ${bad} parts didn't download; try again on better Wi-Fi.` : 'Maps saved. The detailed map now works offline around your places.');
+}
+// the nearest named place on the detailed map, for a dropped pin
+function glNearName(lat, lng) {
+  if (!GL) return '';
+  try {
+    const p = GL.project([lng, lat]); if (p.x < 0 || p.y < 0 || p.x > W || p.y > H) return '';
+    const layers = ['poi-label', 'station-label', 'suburb', 'village', 'town', 'city'].filter(id => GL.getLayer(id));
+    let best = '', bd = Infinity;
+    for (const f of GL.queryRenderedFeatures([[p.x - 60, p.y - 60], [p.x + 60, p.y + 60]], { layers })) {
+      const pr = f.properties || {}, nm = pr['name:en'] || pr.name_en || pr.name; if (!nm || !f.geometry || f.geometry.type !== 'Point') continue;
+      const q = GL.project(f.geometry.coordinates), d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2; if (d < bd) { bd = d; best = nm; }
+    }
+    return best;
+  } catch (e) { return ''; }
 }
 
 /* ---------- navigation ---------- */
-const VIEWS = [['today', 'Today', 'today'], ['plan', 'Plan', 'plan'], ['stays', 'Stays', 'stay'], ['spend', 'Spend', 'yen'], ['notes', 'Notes', 'note'], ['stamps', 'Stamps', 'stamp'], ['phrases', 'Phrases', 'chat']];
-const NAV = [['today', 'Today', 'today'], ['map', 'Map', 'mapnav'], ['plan', 'Plan', 'plan'], ['spend', 'Spend', 'yen'], ['more', 'More', 'more']];
+// the money icon and the names of the book and phrases follow the trip's country
+const moneyIcon = () => COUNTRY().cur === 'JPY' ? 'yen' : 'wallet';
+const phrasesTitle = () => COUNTRY().words ? 'Local words' : 'Phrases';
+let VIEWS = [], NAV = [];
 function renderNav() {
+  VIEWS = [['today', 'Today', 'today'], ['plan', 'Plan', 'plan'], ['stays', 'Stays', 'stay'], ['spend', 'Spend', moneyIcon()], ['notes', 'Notes', 'note'], ['stamps', BOOK().title, 'stamp'], ['phrases', phrasesTitle(), 'chat']];
+  NAV = [['today', 'Today', 'today'], ['map', 'Map', 'mapnav'], ['plan', 'Plan', 'plan'], ['spend', 'Spend', moneyIcon()], ['more', 'More', 'more']];
   $('#rail').innerHTML = VIEWS.map(([k, l, ic]) => `<button type="button" data-nav="${k}" aria-current="${S.tab === k}">${icon(ic)}${l}</button>`).join('');
   const cur = S.view === 'map' ? 'map' : ['stays', 'notes', 'stamps', 'phrases', 'more'].includes(S.tab) ? 'more' : S.tab;
   $('#appnav').innerHTML = NAV.map(([k, l, ic]) => `<button type="button" data-nav="${k}" aria-current="${cur === k}">${icon(ic)}${l}</button>`).join('');
@@ -997,7 +1498,7 @@ function todayHTML() {
     <div class="sec"><div class="sec-h"><span class="label">Spent today</span><button class="btn btn-sm btn-ghost" type="button" data-nav="spend">${icon('plus')}Add expense</button></div>
       <div class="big-num">${money(spentToday)}${b ? `<span class="muted" style="font-size:14px;font-weight:600;letter-spacing:0"> of ${money(b)}</span>` : ''}</div>
       ${b ? `<div class="meter ${spentToday > b ? 'over' : ''}"><i style="width:${pct}%"></i></div>` : '<div class="muted" style="font-size:13px">Set a daily budget on the Spend tab to track it here.</div>'}</div>
-    <div class="sec"><span class="label">Quick</span><div class="quick"><button class="btn" type="button" data-nav="phrases">${icon('chat')}Phrases</button><button class="btn" type="button" data-nav="spend">${icon('yen')}Convert</button><button class="btn" type="button" data-nav="map">${icon('mapnav')}Map</button></div></div>`;
+    <div class="sec"><span class="label">Quick</span><div class="quick"><button class="btn" type="button" data-nav="phrases">${icon('chat')}${phrasesTitle()}</button><button class="btn" type="button" data-nav="spend">${icon(moneyIcon())}Convert</button><button class="btn" type="button" data-nav="map">${icon('mapnav')}Map</button></div></div>`;
 }
 const gmaps = p => `https://www.google.com/maps/search/?api=1&query=${p.kind === 'note' || !p.name ? `${p.lat},${p.lng}` : encodeURIComponent(p.name + (p.ja ? ' ' + p.ja : ''))}`;
 
@@ -1035,7 +1536,7 @@ function latelyHTML() {
 
 /* stays */
 function curBar() {
-  return `<div class="inline"><div class="seg" role="group" aria-label="Currency"><button type="button" data-cur="jpy" aria-pressed="${S.cur === 'jpy'}">¥ Yen</button><button type="button" data-cur="aud" aria-pressed="${S.cur === 'aud'}">A$ Dollars</button></div><label for="rateIn">A$1 = ¥</label><input id="rateIn" class="input num" inputmode="decimal" value="${esc(S.settings.rate)}" ${canEdit() ? '' : 'disabled'}></div>`;
+  return `<div class="inline"><div class="seg" role="group" aria-label="Currency"><button type="button" data-cur="jpy" aria-pressed="${S.cur === 'jpy'}">${esc(CL().pre.trim())} ${esc(CL().name)}</button><button type="button" data-cur="aud" aria-pressed="${S.cur === 'aud'}">${esc(CH().pre.trim())} ${esc(CH().name.replace(/^(Australian|NZ|US|Canadian|Singapore) d/, 'D'))}</button></div><label for="rateIn">${esc(CH().pre.trim())}1 = ${esc(CL().pre.trim())}</label><input id="rateIn" class="input num" inputmode="decimal" value="${esc(S.settings.rate || '')}" placeholder="${COUNTRY().cur === 'JPY' ? '113' : 'rate'}" ${canEdit() ? '' : 'disabled'}></div>`;
 }
 function staysHTML() {
   const stays = [...S.places.values()].filter(p => p.kind === 'stay').sort((a, b) => (a.start || '9999').localeCompare(b.start || '9999'));
@@ -1083,14 +1584,14 @@ function spendHTML() {
     ${b ? `<div class="meter ${todaySum > b ? 'over' : ''}"><i style="width:${Math.min(100, todaySum / b * 100)}%"></i></div>` : ''}
     <div class="block yellow"><span class="label">Settle up</span><div class="h-head">${esc(bal)}</div><div class="muted" style="font-size:12px">${esc(n0)} paid ${money(paid[0])} · ${esc(n1)} paid ${money(paid[1])}. Everything is split evenly.</div></div></div>`;
   if (canEdit()) h += `<div class="sec"><span class="label">Add an expense</span><form class="addx" id="addx" novalidate>
-      <div class="r"><input class="input num" id="xAmt" inputmode="decimal" autocomplete="off" placeholder="Amount" aria-label="Amount"><select class="input" id="xCur" aria-label="Currency"><option value="jpy">¥</option><option value="aud">A$</option></select></div>
+      <div class="r"><input class="input num" id="xAmt" inputmode="decimal" autocomplete="off" placeholder="Amount" aria-label="Amount"><select class="input" id="xCur" aria-label="Currency"><option value="jpy">${esc(CL().pre.trim())}</option><option value="aud">${esc(CH().pre.trim())}</option></select></div>
       <div class="cats-pick" role="radiogroup" aria-label="Category">${Object.entries(CATS).map(([k, c]) => `<label><input type="radio" name="xcat" value="${k}" ${sel.cat === k ? 'checked' : ''}>${glyph(c.kind)}${c.label}</label>`).join('')}</div>
       <div class="payer" role="radiogroup" aria-label="Who paid"><span class="label" style="align-self:center;margin-right:4px">Paid by</span>${[n0, n1].map((n, i) => `<label><input type="radio" name="xpay" value="${i}" ${sel.payer === i ? 'checked' : ''}>${esc(n)}</label>`).join('')}</div>
       <div class="r"><input class="input" id="xNote" autocomplete="off" placeholder="What was it? (optional)" aria-label="Note"><input class="input" type="date" id="xDate" value="${t}" aria-label="Date"></div>
       <button class="btn btn-primary" type="submit">${icon('plus')}Add expense</button></form></div>`;
   if (byCat.length) h += `<div class="sec"><span class="label">By category</span><div class="cats">${byCat.map(([k, v]) => `<div class="cat"><span>${CATS[k].label}</span><span class="bar"><i style="width:${v / max * 100}%;background:${CATS[k].color}"></i></span><b>${money(v)}</b></div>`).join('')}</div></div>`;
-  h += `<div class="sec"><span class="label">Convert</span><div class="convert"><input class="input num" id="cvJ" inputmode="decimal" placeholder="¥" aria-label="Yen"><span>=</span><input class="input num" id="cvA" inputmode="decimal" placeholder="A$" aria-label="Australian dollars"></div></div>`;
-  if (canEdit()) h += `<div class="sec"><span class="label">Settings</span><div class="g2"><div class="field"><label for="sBudget">Daily budget for both (¥)</label><input class="input num" id="sBudget" inputmode="numeric" value="${b || ''}" placeholder="15000"></div><div class="field"><label for="sN0">Names</label><div style="display:flex;gap:6px"><input class="input" id="sN0" value="${esc(n0)}" aria-label="First traveller"><input class="input" id="sN1" value="${esc(n1)}" aria-label="Second traveller"></div></div></div></div>`;
+  h += `<div class="sec"><span class="label">Convert</span><div class="convert"><input class="input num" id="cvJ" inputmode="decimal" placeholder="${esc(CL().pre.trim())}" aria-label="${esc(CL().name)}"><span>=</span><input class="input num" id="cvA" inputmode="decimal" placeholder="${esc(CH().pre.trim())}" aria-label="${esc(CH().name)}"></div></div>`;
+  if (canEdit()) h += `<div class="sec"><span class="label">Settings</span><div class="g2"><div class="field"><label for="sBudget">Daily budget for both (${esc(CL().pre.trim())})</label><input class="input num" id="sBudget" inputmode="decimal" value="${b || ''}" placeholder="${COUNTRY().cur === 'JPY' ? '15000' : ''}"></div><div class="field"><label for="sN0">Names</label><div style="display:flex;gap:6px"><input class="input" id="sN0" value="${esc(n0)}" aria-label="First traveller"><input class="input" id="sN1" value="${esc(n1)}" aria-label="Second traveller"></div></div></div></div>`;
   if (list.length) {
     let cur = '';
     h += `<div style="padding-bottom:12px">`;
@@ -1116,13 +1617,13 @@ function notesHTML() {
 }
 function stampsHTML() {
   const v = [...S.places.values()].filter(p => p.visited).sort((a, b) => a.visited.localeCompare(b.visited) || a.name.localeCompare(b.name));
-  const total = [...S.places.values()].filter(p => p.kind !== 'note').length;
-  return viewHead('Stamps', `${v.length} of ${total} places`) + `<div class="sec">${v.length ? `<div class="stampbook">${v.map(p => `<button class="stampcell" type="button" data-id="${esc(p.id)}">${stampSVG(p)}<span>${esc(fmtShort(p.visited))}</span></button>`).join('')}</div>`
-    : `<div class="empty" style="padding:0"><b>No stamps yet</b>Stations in Japan keep an ink stamp for travellers to collect. Open a place and tap "We've been here" to stamp it into this book.</div>`}</div>`;
+  const total = [...S.places.values()].filter(p => p.kind !== 'note').length, bk = BOOK(), kind = COUNTRY().book;
+  return viewHead(bk.title, `${v.length} of ${total} places`) + `<div class="sec">${v.length ? `<div class="stampbook ${kind}">${v.map(p => `<button class="stampcell" type="button" data-id="${esc(p.id)}">${stampSVG(p)}<span>${esc(fmtShort(p.visited))}</span></button>`).join('')}</div>`
+    : `<div class="empty" style="padding:0"><b>No ${esc(bk.count)} yet</b>${esc(COUNTRY().bookNote)} Open a place and tap "We've been here" to add it to this book.</div>`}</div>`;
 }
 function phrasesHTML() {
   let i = 0;
-  return viewHead('Phrases', 'Tap one to show it full screen') + PHRASES.map(([group, list]) => `<div class="sec"><span class="label">${esc(group)}</span><div class="phrases">${list.map(([en, jp, ro]) => `<button class="phrase" type="button" data-phrase="${i++}"><span class="en">${esc(en)}</span><span class="jp">${esc(jp)}</span><span class="ro">${esc(ro)}</span></button>`).join('')}</div></div>`).join('');
+  return viewHead(phrasesTitle(), 'Tap one to show it full screen') + PHRASES_NOW().map(([group, list]) => `<div class="sec"><span class="label">${esc(group)}</span><div class="phrases">${list.map(([en, jp, ro]) => `<button class="phrase" type="button" data-phrase="${i++}"><span class="en">${esc(en)}</span><span class="jp">${esc(jp)}</span><span class="ro">${esc(ro)}</span></button>`).join('')}</div></div>`).join('');
 }
 function moreHTML() {
   const item = (k, l, ic, sub) => `<button class="row" type="button" data-nav="${k}" style="grid-template-columns:44px minmax(0,1fr)"><span class="thumb">${ic}</span><span><span class="rname">${l}</span><span class="rmeta">${sub}</span></span></button>`;
@@ -1130,14 +1631,14 @@ function moreHTML() {
   return viewHead('More', S.settings.title) +
     item('stays', 'Stays', glyph('stay', { status: 'booked' }), `${n.filter(p => p.kind === 'stay').length} stays and the nights still to sort`) +
     item('notes', 'Notes and maybes', glyph('note'), `${n.filter(p => p.kind === 'note').length} notes`) +
-    item('stamps', 'Stamps', glyph('see'), `${n.filter(p => p.visited).length} stamped`) +
-    item('phrases', 'Phrases', glyph('food'), 'Japanese to show staff and drivers') +
+    item('stamps', BOOK().title, glyph('see'), `${n.filter(p => p.visited).length} ${BOOK().count}`) +
+    item('phrases', phrasesTitle(), glyph('food'), COUNTRY().words ? `Words and customs that differ in ${esc(COUNTRY().name)}` : `${esc(LANG())} to show staff and drivers`) +
     (canEdit() ? `<div class="sec"><span class="label">Add from websites</span><div class="acts"><button class="btn" type="button" data-paste>${icon('clip')}Paste from a site or email</button><button class="btn" type="button" data-pdf>${icon('doc')}Import a booking PDF</button><a class="btn" href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener">${icon('link')}Set up the Add to Tabi button</a></div><div class="fine">On a booking or ticket page in Safari or Brave, tap your Add to Tabi bookmark, then come back here and paste. Booking PDFs saved in Files can be imported too. Add ticket screenshots from a place's card.</div></div>` : '') +
     (PWA ? `<div class="sec"><span class="label">This phone</span><div class="acts"><button class="btn" type="button" data-act="share">${icon('share')}Share trip file</button><label class="btn">${icon('upload')}Import trip file<input type="file" class="tripImport" accept=".json,application/json" hidden></label><button class="btn" type="button" data-act="settings">${icon('settings')}Trip settings</button></div><div class="fine">Each phone keeps its own copy. To sync, share your trip file and import it on the other phone. The newest change wins.</div></div>` : '');
 }
 
 /* panel events */
-const PH_FLAT = PHRASES.flatMap(([, l]) => l);
+const PH_FLAT = () => PHRASES_NOW().flatMap(([, l]) => l);
 $('#pbody').addEventListener('click', async e => {
   const t = e.target;
   if (t.closest('a[href]')) return;
@@ -1149,7 +1650,7 @@ $('#pbody').addEventListener('click', async e => {
   const tkt = t.closest('[data-ticket]'); if (tkt) { const p = S.places.get(tkt.dataset.ticket); if (p) openTicket(p, 0); return; }
   if (t.closest('[data-paste]')) { addFromSite(); return; }
   if (t.closest('[data-pdf]')) { addFromPdf(); return; }
-  const ph = t.closest('[data-phrase]'); if (ph) { const [en, jp, ro] = PH_FLAT[+ph.dataset.phrase]; openShow({ label: en, jp, sub: ro, kc: 'var(--blue)' }); return; }
+  const ph = t.closest('[data-phrase]'); if (ph) { const [en, jp, ro] = PH_FLAT()[+ph.dataset.phrase]; openShow({ label: en, jp, sub: ro, kc: 'var(--blue)' }); return; }
   const tk = t.closest('[data-tick]'); if (tk) { const p = S.places.get(tk.dataset.tick); if (p) await patch('places', p.id, { done: !p.done }, p.done ? 'reopened' : 'ticked off'); return; }
   const dx = t.closest('[data-delx]'); if (dx) {
     if (dx.dataset.armed) { await remove('spend', dx.dataset.delx); toast('Expense deleted'); }
@@ -1168,7 +1669,8 @@ $('#pbody').addEventListener('submit', async e => {
   if (e.target.id === 'addx') {
     const raw = parseFloat(String($('#xAmt').value).replace(/[^0-9.]/g, ''));
     if (!(raw > 0)) { $('#xAmt').focus(); toast('Enter how much it cost.'); return; }
-    const amount = Math.round($('#xCur').value === 'aud' ? raw * S.settings.rate : raw);
+    if ($('#xCur').value === 'aud' && !(S.settings.rate > 0)) { toast('Set the exchange rate first, under Stays or Spend.'); return; }
+    const amount = roundL($('#xCur').value === 'aud' ? raw * S.settings.rate : raw);
     const cat = ($('input[name="xcat"]:checked') || {}).value || 'other', payer = +(($('input[name="xpay"]:checked') || {}).value || 0);
     S.xpend = { cat, payer };
     const ok = await put('spend', newId('x'), { amount, cat, payer, date: isIso($('#xDate').value) ? $('#xDate').value : today(), note: $('#xNote').value.trim().slice(0, 120), by: S.meId || 'local', at: Date.now() });
@@ -1178,12 +1680,12 @@ $('#pbody').addEventListener('submit', async e => {
 $('#pbody').addEventListener('input', e => {
   const r = S.settings.rate;
   if (e.target.id === 'cvJ') { const v = parseFloat(e.target.value.replace(/[^0-9.]/g, '')); $('#cvA').value = v > 0 ? (v / r).toFixed(2) : ''; }
-  if (e.target.id === 'cvA') { const v = parseFloat(e.target.value.replace(/[^0-9.]/g, '')); $('#cvJ').value = v > 0 ? Math.round(v * r) : ''; }
+  if (e.target.id === 'cvA') { const v = parseFloat(e.target.value.replace(/[^0-9.]/g, '')); $('#cvJ').value = v > 0 ? roundL(v * r) : ''; }
 });
 $('#pbody').addEventListener('change', async e => {
   const id = e.target.id;
-  if (id === 'rateIn') { const v = parseFloat(e.target.value); if (!(v > 20 && v < 400)) { toast('Enter how many yen one Australian dollar buys, like 113.'); e.target.value = S.settings.rate; return; } await saveSettings({ rate: v }); }
-  if (id === 'sBudget') { const v = Math.round(parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0); await saveSettings({ budget: v }); toast(v ? `Daily budget set to ${yen(v)}` : 'Daily budget cleared'); }
+  if (id === 'rateIn') { const v = parseFloat(e.target.value); if (!(v > 0 && v < 1e6)) { toast(`Enter how many ${CL().name.toLowerCase()} one ${CH().pre.trim()} buys${COUNTRY().cur === 'JPY' && S.settings.home === 'AUD' ? ', like 113' : ''}.`); e.target.value = S.settings.rate || ''; return; } await saveSettings({ rate: v }); }
+  if (id === 'sBudget') { const v = roundL(parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0); await saveSettings({ budget: v }); toast(v ? `Daily budget set to ${yen(v)}` : 'Daily budget cleared'); }
   if (id === 'sN0' || id === 'sN1') { const n = [$('#sN0').value.trim().slice(0, 24) || 'Me', $('#sN1').value.trim().slice(0, 24) || 'Partner']; await saveSettings({ names: n }); }
   if (e.target.classList.contains('tripImport') && PWA) importTripFile(e.target);
 });
@@ -1197,7 +1699,7 @@ async function quickNote(pin) {
 /* show to someone */
 function openShow({ label, jp, sub, kc }) {
   const el = $('#show'); el.classList.remove('ticket');
-  el.innerHTML = `<div class="bar"><span class="label">${esc(label)}</span><button class="iconbtn" type="button" id="showX" aria-label="Close">${icon('x')}</button></div><div class="main"><div class="accent" style="--kc:${kc || 'var(--red)'}"></div><div class="jp" lang="ja">${esc(jp)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>`;
+  el.innerHTML = `<div class="bar"><span class="label">${esc(label)}</span><button class="iconbtn" type="button" id="showX" aria-label="Close">${icon('x')}</button></div><div class="main"><div class="accent" style="--kc:${kc || 'var(--red)'}"></div><div class="jp" lang="${esc(COUNTRY().lang)}">${esc(jp)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>`;
   el.hidden = false; $('#showX').focus();
   try { navigator.wakeLock && navigator.wakeLock.request('screen').then(l => { el._lock = l; }).catch(() => {}); } catch (e) {}
 }
@@ -1206,7 +1708,8 @@ $('#show').addEventListener('click', e => { if (e.target.closest('#showX')) clos
 function showAddress(p) {
   if (!p) return;
   const jp = p.addressJa || p.address || p.ja || p.name;
-  openShow({ label: 'Please take us here', jp: (p.ja ? p.ja + '\n' : '') + jp, sub: `${p.name}${p.address && p.addressJa ? ' · ' + p.address : ''}${p.phone ? ' · ' + p.phone : ''}`, kc: KC[KINDS[p.kind].color] });
+  const [say, lc] = COUNTRY().driver || ['Please take us here', ''], local = COUNTRY().lang === 'en' ? '' : lc;
+  openShow({ label: say, jp: (p.ja ? p.ja + '\n' : '') + jp, sub: `${local ? local + ' · ' : ''}${p.name}${p.address && p.addressJa ? ' · ' + p.address : ''}${p.phone ? ' · ' + p.phone : ''}`, kc: KC[KINDS[p.kind].color] });
   $('#show .jp').style.whiteSpace = 'pre-line';
 }
 
@@ -1218,11 +1721,53 @@ function select(id, { fly = true } = {}) {
   renderAll();
   const p = S.places.get(id);
   if (p && fly) flyToPlace(p);
-  else if (p && hasLoc(p)) { const [x, y] = P(p.lng, p.lat); if (x < 40 || y < 40 || x > W - 40 || y > H - 40) flyToPlace(p, 600, T.k); }
+  else if (p && hasLoc(p)) { const [x, y] = P(p.lng, p.lat); if (x < 40 || y < 40 || x > W - 40 || y > H - 40) flyToPlace(p, 600, zk()); }
   presence({ sel: id || null });
 }
 function deselect() { S.sel = null; S.ideas = null; renderAll(); presence({ sel: null }); }
-function stampSVG(p, extra = '') {
+/* the visited-places book: ink stamps (Japan, Korea, Taiwan), postcards (Europe, Southeast Asia, the UK)
+   or embroidered patches (the US, New Zealand), chosen by the trip's country */
+function stampSVG(p, extra = '') { const b = COUNTRY().book; return b === 'postcards' ? postcardSVG(p, extra) : b === 'patches' ? patchSVG(p, extra) : inkStampSVG(p, extra); }
+// a kind's Bauhaus shape, centred on cx,cy at size r
+function kindShape(kind, cx, cy, r, fill) {
+  const k = KINDS[kind] || KINDS.see, f = `fill="${fill}" stroke="none"`;
+  return k.shape === 'circle' ? `<circle cx="${cx}" cy="${cy}" r="${r}" ${f}/>` : k.shape === 'tri' ? `<path d="M${cx} ${cy - r}L${cx + r * 1.1} ${cy + r * 0.9}H${cx - r * 1.1}z" ${f}/>`
+    : k.shape === 'square' ? `<rect x="${cx - r}" y="${cy - r}" width="${r * 2}" height="${r * 2}" ${f}/>` : k.shape === 'half' ? `<path d="M${cx - r} ${cy + r * 0.5}a${r} ${r} 0 0 1 ${r * 2} 0z" ${f}/>`
+    : k.shape === 'bar' ? `<rect x="${cx - r * 1.3}" y="${cy - r * 0.35}" width="${r * 2.6}" height="${r * 0.7}" ${f}/>` : `<path d="M${cx - r} ${cy + r}V${cy - r}a${r * 2} ${r * 2} 0 0 1 ${r * 2} ${r * 2}z" ${f}/>`;
+}
+function postcardSVG(p, extra) {
+  const rot = (hash(p.id) % 7) - 3, k = KINDS[p.kind] || KINDS.see, col = KC[k.color], f0 = picsOf(p)[0], src = f0 ? photoSrc(f0) : '';
+  const dt = (p.visited || today()).split('-').reverse().join('.'), uid = 'pc' + hash(p.id);
+  const words = p.name.split(' '), lines = ['', '']; for (const w of words) { const L = lines[0].length + w.length < 15 || !lines[0] ? 0 : 1; lines[L] = (lines[L] + ' ' + w).trim(); }
+  if (lines[1].length > 15) lines[1] = lines[1].slice(0, 14) + '…';
+  return `<svg class="stamp postcard ${extra}" viewBox="0 0 140 96" style="--rot:${rot}deg" role="img" aria-label="Postcard: ${esc(p.name)}, ${esc(dt)}">
+    <defs><clipPath id="${uid}"><rect x="6" y="6" width="62" height="84"/></clipPath></defs>
+    <rect x="0.75" y="0.75" width="138.5" height="94.5" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.5"/>
+    ${src ? `<image href="${esc(src)}" x="6" y="6" width="62" height="84" preserveAspectRatio="xMidYMid slice" clip-path="url(#${uid})"/>` : `<rect x="6" y="6" width="62" height="84" fill="${col}"/>${kindShape(p.kind, 37, 48, 13, k.color === 'ink' ? 'var(--surface)' : 'var(--ink)')}`}
+    <line x1="74" y1="10" x2="74" y2="86" stroke="var(--ink)" stroke-width="0.8" opacity=".4"/>
+    <rect x="108" y="8" width="24" height="28" fill="${col}" stroke="var(--surface)" stroke-width="2" stroke-dasharray="2 1.6"/>${kindShape(p.kind, 120, 22, 5.5, k.color === 'ink' ? 'var(--surface)' : 'var(--ink)')}
+    <g fill="none" stroke="var(--ink)" stroke-width="0.9" opacity=".75"><circle cx="104" cy="32" r="10"/><path d="M90 28c5-3 9 3 14 0s9-3 14 0M90 34c5-3 9 3 14 0s9-3 14 0"/></g>
+    <text x="104" y="34.5" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="5" fill="var(--ink)">${esc(TRIP_COUNTRY())}</text>
+    <text x="80" y="56" font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="9" fill="var(--ink)">${esc(lines[0])}</text>
+    ${lines[1] ? `<text x="80" y="67" font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="9" fill="var(--ink)">${esc(lines[1])}</text>` : ''}
+    <g stroke="var(--ink)" stroke-width="0.6" opacity=".35"><line x1="80" y1="74" x2="132" y2="74"/><line x1="80" y1="81" x2="132" y2="81"/></g>
+    <text x="80" y="89" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="5.5" letter-spacing=".8" fill="var(--ink-2)">${esc(dt)}</text>
+  </svg>`;
+}
+function patchSVG(p, extra) {
+  const rot = (hash(p.id) % 9) - 4, k = KINDS[p.kind] || KINDS.see, col = KC[k.color], uid = 'pa' + hash(p.id);
+  const nm = p.name.toUpperCase().slice(0, 22), size = nm.length > 16 ? 8 : 9.5, yr = (p.visited || today()).slice(0, 4);
+  return `<svg class="stamp patch ${extra}" viewBox="0 0 120 120" style="--rot:${rot}deg" role="img" aria-label="Patch: ${esc(p.name)}, ${esc(yr)}">
+    <defs><path id="${uid}" d="M22 62a38 38 0 0 1 76 0"/></defs>
+    <circle cx="60" cy="60" r="55" fill="${col}"/><circle cx="60" cy="60" r="47" fill="var(--surface)"/>
+    <circle cx="60" cy="60" r="51" fill="none" stroke="var(--surface)" stroke-width="1.2" stroke-dasharray="2.4 2"/>
+    <circle cx="60" cy="60" r="43" fill="none" stroke="${col}" stroke-width="1" stroke-dasharray="2.4 2"/>
+    <text font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="${size}" letter-spacing="1.2" fill="var(--ink)"><textPath href="#${uid}" startOffset="50%" text-anchor="middle">${esc(nm)}</textPath></text>
+    ${kindShape(p.kind, 60, 68, 12, col)}
+    <text x="60" y="96" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="8" letter-spacing="2" fill="var(--ink-2)">${esc(yr)}</text>
+  </svg>`;
+}
+function inkStampSVG(p, extra) {
   const rot = (hash(p.id) % 15) - 7;
   const ja = p.ja ? [...p.ja].slice(0, 6).join('') : '';
   const jaSize = ja ? Math.min(22, Math.floor(84 / [...ja].length)) : 0;
@@ -1231,7 +1776,7 @@ function stampSVG(p, extra = '') {
   const k = KINDS[p.kind] || KINDS.see;
   return `<svg class="stamp ${extra}" viewBox="0 0 120 120" style="--rot:${rot}deg" role="img" aria-label="Stamp: ${esc(p.name)}, ${esc(dt)}"><g filter="url(#ink)" fill="currentColor" stroke="currentColor">
     <circle cx="60" cy="60" r="55" fill="none" stroke-width="4.5"/><circle cx="60" cy="60" r="48" fill="none" stroke-width="1.5"/>
-    ${ja ? `<text x="60" y="${34 + jaSize * .4}" text-anchor="middle" font-family="Noto Sans JP, sans-serif" font-weight="900" font-size="${jaSize}" stroke="none">${esc(ja)}</text>` : ''}
+    ${ja ? `<text x="60" y="${34 + jaSize * .4}" text-anchor="middle" style="font-family:var(--font-ja)" font-weight="900" font-size="${jaSize}" stroke="none">${esc(ja)}</text>` : ''}
     ${k.shape === 'circle' ? '<circle cx="60" cy="62" r="9" stroke="none"/>' : k.shape === 'tri' ? '<path d="M60 52 70 70H50z" stroke="none"/>' : k.shape === 'square' ? '<rect x="51" y="53" width="18" height="18" stroke="none"/>' : k.shape === 'half' ? '<path d="M50 70a10 10 0 0 1 20 0z" stroke="none"/>' : k.shape === 'bar' ? '<rect x="48" y="58" width="24" height="7" stroke="none"/>' : '<path d="M51 71V53a18 18 0 0 1 18 18z" stroke="none"/>'}
     <text x="60" y="88" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="${enSize}" letter-spacing="1" stroke="none">${esc(en)}</text>
     <text x="60" y="99" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="7.5" letter-spacing="1.5" stroke="none">${esc(dt)}</text>
@@ -1263,7 +1808,7 @@ function renderCard() {
   const tixRow = tix.length || (hasWallet && canTix) ? `<div class="tix">${tix.map((f, j) => { const src = photoSrc(f); return `<button type="button" data-tix="${j}" aria-label="Show ticket ${j + 1}">${src ? `<img src="${esc(src)}" alt="">` : ''}</button>`; }).join('')}${canTix ? `<button class="tadd" type="button" id="addTicket">${icon('ticket')}<span>Add ticket</span></button>` : ''}</div>` : '';
   const wallet = hasWallet || tix.length ? `<div class="wallet"><div class="wh"><span class="label">${hasWallet ? 'Booking' : 'Tickets'}</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${tix.length ? `<button class="btn btn-sm" type="button" data-tix="0">${icon('ticket')}Show ticket</button>` : ''}${p.addressJa || p.address ? `<button class="btn btn-sm" type="button" id="driverBtn">${icon('car')}Show to driver</button>` : ''}</span></div><div class="wb">${hasWallet ? `<dl class="kv">
       ${p.conf ? `<dt>Ref</dt><dd>${copy(p.conf, 'booking reference')}</dd>` : ''}${p.checkin ? `<dt>Check-in</dt><dd>from ${fmtTime(p.checkin)}</dd>` : ''}${p.checkout ? `<dt>Check-out</dt><dd>by ${fmtTime(p.checkout)}</dd>` : ''}
-      ${p.address ? `<dt>Address</dt><dd>${copy(p.address, 'address')}</dd>` : ''}${p.addressJa ? `<dt>住所</dt><dd class="ja">${copy(p.addressJa, 'Japanese address')}</dd>` : ''}${p.phone ? `<dt>Phone</dt><dd>${copy(p.phone, 'phone number')}</dd>` : ''}</dl>` : ''}${tixRow}</div></div>` : '';
+      ${p.address ? `<dt>Address</dt><dd>${copy(p.address, 'address')}</dd>` : ''}${p.addressJa ? `<dt>${esc(ADDR_LBL())}</dt><dd class="ja" lang="${esc(COUNTRY().lang)}">${copy(p.addressJa, (LANG() || 'local') + ' address')}</dd>` : ''}${p.phone ? `<dt>Phone</dt><dd>${copy(p.phone, 'phone number')}</dd>` : ''}</dl>` : ''}${tixRow}</div></div>` : '';
   const photos = pics.map((f, j) => { const src = photoSrc(f); return src ? `<button class="ph" type="button" data-ph="${j}" aria-label="Open photo ${j + 1}"><img src="${esc(src)}" alt="" loading="lazy" decoding="async"></button>` : ''; }).join('');
   const addPh = editable ? `<button class="ph add" type="button" id="addPhoto">${icon('camera')}<span>Add photos</span></button>` : '';
   let ideas = '';
@@ -1290,7 +1835,7 @@ function renderCard() {
     ${p.notes ? `<div class="notes">${esc(p.notes)}</div>` : ''}
     <div class="acts">
       <button class="btn btn-sm love ${iLike ? 'on' : ''}" type="button" id="loveBtn" ${editable ? '' : 'disabled'} aria-pressed="${iLike}">${icon('heart')}${iLike ? 'Loved' : 'Love it'}${likers.length ? `<span class="likers">${likers.slice(0, 3).map(id => `<img src="${esc(who(id).avatarUrl)}" alt="${esc(firstName(id))}">`).join('')}</span>` : ''}</button>
-      ${editable && p.kind !== 'note' ? `<button class="btn btn-sm ${p.visited ? 'on' : ''}" type="button" id="stampBtn">${icon('stamp')}${p.visited ? 'Stamped' : "We've been here"}</button>` : ''}
+      ${editable && p.kind !== 'note' ? `<button class="btn btn-sm ${p.visited ? 'on' : ''}" type="button" id="stampBtn">${icon('stamp')}${p.visited ? BOOK().done : "We've been here"}</button>` : ''}
       ${hasLoc(p) ? `<a class="btn btn-sm" href="${esc(gmaps(p))}" target="_blank" rel="noopener">${icon('map')}Google Maps</a>` : ''}
       ${canTix && !hasWallet && !tix.length ? `<button class="btn btn-sm" type="button" id="addTicket">${icon('ticket')}Add ticket</button>` : ''}
       ${p.links.map(l => `<a class="btn btn-sm" href="${esc(l.url)}" target="_blank" rel="noopener">${icon('link')}${esc(l.label)}</a>`).join('')}
@@ -1316,10 +1861,42 @@ $('#card').addEventListener('click', async e => {
   const tx = t.closest('[data-tix]'); if (tx) { openTicket(p, +tx.dataset.tix); return; }
   const ph = t.closest('[data-ph]'); if (ph) { openLightbox(p.id, +ph.dataset.ph); return; }
   if (t.closest('#loveBtn')) { const me = S.meId || 'local'; const on = !p.likes[me]; await patch('places', p.id, { likes: { [me]: on } }, on ? 'loved' : 'edited'); return; }
-  if (t.closest('#stampBtn')) { if (p.visited) { await patch('places', p.id, { visited: '' }, 'removed the stamp from'); return; } justStamped = p.id; await patch('places', p.id, { visited: today() }, 'stamped'); return; }
+  if (t.closest('#stampBtn')) { if (p.visited) { await patch('places', p.id, { visited: '' }, BOOK_VERB()[1]); return; } justStamped = p.id; await patch('places', p.id, { visited: today() }, BOOK_VERB()[0]); return; }
   if (t.closest('#ideasBtn')) { askIdeas(p); return; }
   const ai = t.closest('[data-addidea]'); if (ai) { addIdea(+ai.dataset.addidea); return; }
 });
+
+/* ---------- country words ---------- */
+const ADDR_LBL = () => ({ JP: '住所', KR: '주소', TW: '地址', TH: 'ที่อยู่' })[TRIP_COUNTRY()] || (LANG() ? LANG() + ' address' : 'Local address');
+const BOOK_VERB = () => ({ stamps: ['stamped', 'removed the stamp from'], postcards: ['kept a postcard of', 'removed the postcard of'], patches: ['earned a patch at', 'removed the patch for'] })[COUNTRY().book] || ['stamped', 'removed the stamp from'];
+// 1.234,50 and 1,234.50 both read as 1234.5; 27,660 reads as 27660
+function parseAmt(v) {
+  let t = String(v == null ? '' : v).replace(/[\s\u00a0'’]/g, '').replace(/[^0-9.,]/g, '');
+  if (/,\d{1,2}$/.test(t) && !/\.\d{1,2}$/.test(t)) t = t.replace(/\./g, '').replace(',', '.'); else t = t.replace(/,/g, '');
+  return parseFloat(t);
+}
+// a captured currency (an ISO code, or the older jpy and aud) as the trip's local or home slot
+function curSlot(c) {
+  const u = String(c || '').toUpperCase();
+  return !u || u === COUNTRY().cur ? 'jpy' : u === S.settings.home ? 'aud' : 'other';
+}
+// labels, placeholders and the map that follow the trip's country
+var uiReady = false, uiCountry = '';
+function onCountry() {
+  if (!uiReady) return;
+  const c = COUNTRY(), lang = c.lang, en = lang === 'en', smp = c.sample || {};
+  const ja = $('#fJa'), aj = $('#fAddrJa');
+  ja.closest('.field').hidden = en; aj.closest('.field').hidden = en;
+  $('label[for="fJa"]').textContent = `${LANG()} name`; ja.placeholder = smp.local || ''; ja.lang = lang;
+  $('label[for="fAddrJa"]').textContent = `Address in ${LANG()} (for taxis)`; aj.placeholder = smp.addr || ''; aj.lang = lang;
+  $('#fPrice').placeholder = smp.price || '';
+  const o = $$('#fCur option'); if (o[0]) o[0].textContent = CL().pre.trim(); if (o[1]) o[1].textContent = CH().pre.trim();
+  $('#map').setAttribute('aria-label', `Map of ${c.name} with your places`);
+  if (uiCountry !== TRIP_COUNTRY()) {
+    const first = !uiCountry; uiCountry = TRIP_COUNTRY();
+    if (!first) { drawBase(); if (GL) GL.setStyle(glStyle()); if (S.ready) { renderNav(); renderAll(); zoomTo(countryView(), 0); } }
+  } else if (S.ready) renderNav();
+}
 
 /* ---------- dialog ---------- */
 let draft = null, lastFocus = null;
@@ -1351,7 +1928,7 @@ function openDialog(p) {
   radio('kind', p.kind || 'see'); radio('status', p.status || 'planned'); syncKind();
   [F.start, F.end].forEach(i => { i.min = TRIP.start; i.max = TRIP.end; });
   F.start.value = p.start || ''; F.end.value = p.end || ''; F.time.value = p.time || '';
-  F.cur.value = 'jpy'; F.price.value = p.price != null ? Math.round(p.price) : '';
+  F.cur.value = 'jpy'; F.price.value = p.price != null ? roundL(p.price) : '';
   F.pnote.value = p.priceNote || ''; F.notes.value = p.notes || ''; F.loc.value = '';
   F.conf.value = p.conf || ''; F.cin.value = p.checkin || ''; F.cout.value = p.checkout || ''; F.addr.value = p.address || ''; F.addrJa.value = p.addressJa || ''; F.phone.value = p.phone || '';
   F.links.value = (p.links || []).map(l => `${l.label} | ${l.url}`).join('\n');
@@ -1365,12 +1942,25 @@ function openDialog(p) {
 function closeDialog() { F.scrim.hidden = true; draft = null; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
 F.scrim.addEventListener('click', e => { if (e.target === F.scrim || e.target.closest('[data-close]')) closeDialog(); });
 let suggList = [], suggAct = -1;
+let onlineT = 0;
+function drawSugg(busy) {
+  F.sugg.innerHTML = suggList.map((g, i) => `<button type="button" data-g="${i}"><b>${esc(g.n)}</b>${g.ja ? `<span class="ja">${esc(g.ja)}</span>` : ''}<small>${esc(g.sub)}</small></button>`).join('')
+    + (busy && !suggList.length ? '<div class="sugg-note">Searching…</div>' : '');
+  F.sugg.hidden = !suggList.length && !busy;
+}
 F.loc.addEventListener('input', () => {
   const q = F.loc.value.trim(); const c = parseCoords(q);
+  clearTimeout(onlineT);
   if (c) { draft.lat = c.lat; draft.lng = c.lng; syncWhere(); F.sugg.hidden = true; return; }
   suggList = searchGaz(q); suggAct = -1;
-  F.sugg.innerHTML = suggList.map((g, i) => `<button type="button" data-g="${i}"><b>${esc(g.n)}</b>${g.ja ? `<span class="ja">${esc(g.ja)}</span>` : ''}<small>${esc(g.sub)}</small></button>`).join('');
-  F.sugg.hidden = !suggList.length;
+  // Japan's place list works offline; other countries (or a Japan search with no match) look online
+  const online = q.length >= 3 && navigator.onLine !== false && (TRIP_COUNTRY() !== 'JP' || !suggList.length);
+  drawSugg(online);
+  if (online) onlineT = setTimeout(async () => {
+    const r = await searchOnline(q); if (F.loc.value.trim() !== q) return;
+    const have = new Set(suggList.map(g => g.n.toLowerCase())); suggList = [...suggList, ...r.filter(g => !have.has(g.n.toLowerCase()))].slice(0, 8); suggAct = -1;
+    drawSugg(false); if (!suggList.length && q) { F.sugg.innerHTML = '<div class="sugg-note">No places found. Try the town name, or pick the spot on the map.</div>'; F.sugg.hidden = false; }
+  }, 350);
 });
 F.loc.addEventListener('keydown', e => {
   if (F.sugg.hidden) return;
@@ -1385,8 +1975,8 @@ $('#fPick').onclick = () => {
 };
 function restoreForm(d) { const keepLinks = d.linksRaw; openDialog({ ...d, links: [] }); if (keepLinks != null) F.links.value = keepLinks; draft = { ...draft, lat: d.lat, lng: d.lng }; syncWhere(); }
 function readForm() {
-  const k = radioVal('kind'); const pv = parseFloat(String(F.price.value).replace(/[^0-9.]/g, ''));
-  const price = isFinite(pv) && pv > 0 ? Math.round(F.cur.value === 'aud' ? pv * (S.settings.rate || 113) : pv) : null;
+  const k = radioVal('kind'); const pv = parseAmt(F.price.value);
+  const price = isFinite(pv) && pv > 0 && (F.cur.value !== 'aud' || S.settings.rate) ? roundL(F.cur.value === 'aud' ? pv * S.settings.rate : pv) : null;
   return { ...draft, title: F.name.value.trim(), name: F.name.value.trim(), ja: F.ja.value.trim(), kind: k, status: radioVal('status') || 'planned', start: F.start.value, end: k === 'stay' ? F.end.value : '', time: hhmm(F.time.value), price, priceNote: F.pnote.value.trim(), linksRaw: F.links.value, notes: F.notes.value.trim(),
     conf: F.conf.value.trim(), checkin: hhmm(F.cin.value), checkout: hhmm(F.cout.value), address: F.addr.value.trim(), addressJa: F.addrJa.value.trim(), phone: F.phone.value.trim() };
 }
@@ -1405,6 +1995,7 @@ F.form.addEventListener('submit', async e => {
   e.preventDefault();
   const d = readForm();
   if (!d.name && d.kind !== 'note') { F.name.focus(); toast('Give it a name first.'); return; }
+  if (F.cur.value === 'aud' && parseAmt(F.price.value) > 0 && !S.settings.rate) { F.price.focus(); toast(`Set the exchange rate in Money first, or enter the price in ${CL().name.toLowerCase()}.`); return; }
   if (d.kind === 'note' && !d.name && !d.notes) { F.notes.focus(); toast('Write the note first.'); return; }
   const pl = parseLinks(d.linksRaw); if (pl.bad.length) { $('#fMore').open = true; F.links.focus(); toast('Each link needs to start with https://'); return; }
   if (d.kind === 'stay' && d.start && d.end && d.end <= d.start) { F.end.focus(); toast('Check-out needs to be after check-in.'); return; }
@@ -1665,9 +2256,10 @@ function cleanCapture(c) {
   o.kind = ['stay', 'move', 'see', 'food', 'craft', 'walk'].includes(c.kind) ? c.kind : '';
   o.start = isIso(c.start) ? c.start : ''; o.end = isIso(c.end) && c.end > o.start ? c.end : '';
   o.time = hhmm(c.time); o.checkin = hhmm(c.checkin); o.checkout = hhmm(c.checkout);
-  const pv = +c.price; o.price = isFinite(pv) && pv > 0 && pv < 1e8 ? pv : null; o.cur = c.cur === 'aud' ? 'aud' : 'jpy'; o.total = c.total === true;
+  const pv = +c.price; o.price = isFinite(pv) && pv > 0 && pv < 1e8 ? pv : null; o.cur = curSlot(c.cur); o.total = c.total === true;
+  if (o.price && o.cur === 'other') { o.priceOther = `${String(c.cur).toUpperCase().slice(0, 3)} ${o.price.toLocaleString('en-AU')}${o.total ? ' total' : ''}`; o.price = null; }
   o.conf = s(c.conf, 60); o.address = s(c.address, 200); o.addressJa = s(c.addressJa, 200); o.phone = s(c.phone, 40);
-  const la = +c.lat, ln = +c.lng; if (la > 20 && la < 46.5 && ln > 122 && ln < 154) { o.lat = +la.toFixed(5); o.lng = +ln.toFixed(5); }
+  const la = +c.lat, ln = +c.lng; if (isFinite(la) && isFinite(ln) && Math.abs(la) <= 85 && Math.abs(ln) <= 180 && (la || ln)) { o.lat = +la.toFixed(5); o.lng = +ln.toFixed(5); }
   o.url = safeUrl(s(c.url, 600)); o.site = s(c.site, 40); o.room = s(c.room, 80); o.breakfast = c.breakfast === true;
   // "APB 高円寺" becomes APB Koenji when Tabi knows the Japanese place name; the Japanese stays as the sign
   if (o.name && TP.JP.test(o.name)) {
@@ -1705,8 +2297,9 @@ function applyCapture(c, from) {
   if (c.price) {
     const n = k === 'stay' && F.start.value && F.end.value ? diffDays(F.start.value, F.end.value) : 0;
     let v = c.price; if (k === 'stay' && c.total && n > 1) v = c.price / n; // the card already shows the total for the stay
-    F.cur.value = c.cur; F.price.value = c.cur === 'aud' ? Math.round(v * 100) / 100 : Math.round(v); got.push('price');
+    F.cur.value = c.cur; F.price.value = c.cur === 'aud' ? Math.round(v * 100) / 100 : roundL(v); got.push('price');
   }
+  else if (c.priceOther && !F.pnote.value.trim()) { F.pnote.value = 'Paid ' + c.priceOther; got.push('price'); }
   if (c.conf) { F.conf.value = c.conf; radio('status', 'booked'); got.push('booking ref'); }
   if (c.address && !F.addr.value.trim()) { F.addr.value = c.address; got.push('address'); }
   if (c.addressJa && !F.addrJa.value.trim()) { F.addrJa.value = c.addressJa; if (!got.includes('address')) got.push('address'); }
@@ -1720,7 +2313,7 @@ function applyCapture(c, from) {
   if (moved && F.ja.value.trim()) {
     const old = GAZ.find(g => g.ja && g.ja === F.ja.value.trim()), cc = Math.cos(c.lat * Math.PI / 180);
     const nb = GAZ.filter(g => g.ja && Math.hypot(g.lat - c.lat, (g.lng - c.lng) * cc) * 111 < 5).sort((x, y) => Math.hypot(x.lat - c.lat, (x.lng - c.lng) * cc) - Math.hypot(y.lat - c.lat, (y.lng - c.lng) * cc))[0];
-    if (old && nb && nb.ja !== old.ja) { F.ja.value = nb.ja; jaNote = `Its Japanese name changed from ${old.ja} to ${nb.ja} to match. `; }
+    if (old && nb && nb.ja !== old.ja) { F.ja.value = nb.ja; jaNote = `Its ${LANG()} name changed from ${old.ja} to ${nb.ja} to match. `; }
   }
   if (c.url && !F.links.value.includes(c.url)) { const lbl = (c.site || hostOf(c.url)).replace(/\|/g, ' ').slice(0, 40); F.links.value = (F.links.value.trim() ? F.links.value.trim() + '\n' : '') + `${lbl} | ${c.url}`; got.push('link'); }
   if (F.conf.value || F.addr.value || F.addrJa.value || F.phone.value || F.links.value) $('#fMore').open = true;
@@ -1728,9 +2321,10 @@ function applyCapture(c, from) {
   if (!hasLoc(draft)) { const g = guessPin(c); if (g) { draft.lat = g.lat; draft.lng = g.lng; syncWhere(); near = g.n; got.push('map location'); } }
   if (!hasLoc(draft)) {
     const tries = [c.name, c.ja, ...(c.address || '').split(',').map(x => x.trim()).filter(x => x && !/\d{3}/.test(x)).reverse()].filter(Boolean);
-    for (const q of tries) { if (searchGaz(q).length) { F.loc.value = q; F.loc.dispatchEvent(new Event('input')); break; } }
+    if (TRIP_COUNTRY() === 'JP') { for (const q of tries) { if (searchGaz(q).length) { F.loc.value = q; F.loc.dispatchEvent(new Event('input')); break; } } }
+    else { const q = (c.address || '').split(',').slice(0, 2).join(',').trim() || c.name; if (q) { F.loc.value = q; F.loc.dispatchEvent(new Event('input')); } }
   }
-  if (c.ja && !c.name && !F.name.value.trim()) got.unshift('Japanese name');
+  if (c.ja && !c.name && !F.name.value.trim()) got.unshift(LANG() + ' name');
   const list = got.length > 1 ? got.slice(0, -1).join(', ') + ' and ' + got[got.length - 1] : got.join('');
   const todo = [!F.name.value.trim() ? 'add an English name' : '', hasLoc(draft) ? '' : 'pick it on the map or search below'].filter(Boolean).join(', ');
   if (got.length) pasteNote(`Filled in ${esc(list)}${from ? ' from ' + esc(from) : ''}. ${moved ? 'The pin moved to the location in the booking. ' + esc(jaNote) : ''}${near ? `It's pinned at ${esc(near)} for now; use <b>Pick on map</b> for the exact spot. ` : ''}${todo ? todo.charAt(0).toUpperCase() + todo.slice(1) + ', then check' : 'Check'} it and save.`);
@@ -1738,7 +2332,8 @@ function applyCapture(c, from) {
 }
 // an island, town or sight Tabi already knows, named in the booking: "Kurashi, Teshima Island" or "366 Teshimaieura, ..."
 function guessPin(c) {
-  const clean = t => fold(String(t || '').replace(/\d[\d-]*/g, ' ').replace(/\b(?:island|islands|district|city|town|village|ward|prefecture|gun|shi|cho|machi|japan)\b/gi, ' '));
+  if (TRIP_COUNTRY() !== 'JP') return null;
+  const clean = t => fold(String(t || '').replace(/\d[\d-]*/g, ' ').replace(/\b(?:island|islands|district|city|town|village|ward|prefecture|gun|shi|cho|machi|japan)\b/gi, ' ').replace(new RegExp('\\b' + COUNTRY().name + '\\b', 'gi'), ' '));
   const parts = String(c.name || '').split(',').map(clean).filter(Boolean);
   const toks = [...parts.slice(1), parts[0], clean(String(c.address || '').split(',')[0])].filter(t => t && t.length >= 4);
   for (const t of toks) {
@@ -1783,9 +2378,9 @@ async function askIdeas(p) {
   if (!sample) return;
   S.ideas = { for: p.id, loading: true, items: [] }; renderCard();
   const month = p.start ? parseD(p.start).toLocaleDateString('en-AU', { month: 'long' }) : 'early November';
-  const prompt = `Two adults are travelling in Japan in ${month}. They love drawing and knitting somewhere calm and scenic, craft and art, long walks, local food and quiet bars.
+  const prompt = `Two adults are travelling in ${COUNTRY().name} in ${month}. They love drawing and knitting somewhere calm and scenic, craft and art, long walks, local food and quiet bars.
 Suggest 5 real places within about 8 km of "${p.name}"${p.ja ? ` (${p.ja})` : ''} at latitude ${p.lat.toFixed(4)}, longitude ${p.lng.toFixed(4)}. Only include places you are confident exist and are open to visitors. Mix the kinds. Do not include "${p.name}" itself.
-Reply with JSON only: {"ideas":[{"name":"English name","ja":"Japanese name","kind":"see|food|craft|walk","lat":0,"lng":0,"why":"one short sentence on why it suits them"}]}`;
+Reply with JSON only: {"ideas":[{"name":"English name","ja":"${LANG() ? LANG() + ' name' : ''}","kind":"see|food|craft|walk","lat":0,"lng":0,"why":"one short sentence on why it suits them"}]}`;
   try {
     const out = await sample.json(prompt, { modelTier: 'default' });
     const arr = (out && Array.isArray(out.ideas) ? out.ideas : []).filter(x => x && typeof x.name === 'string').slice(0, 6).map(x => ({
@@ -1849,7 +2444,7 @@ async function playTrip() {
 /* ---------- presence ---------- */
 let presenceTimer = null, pending = {};
 function presence(patchObj) { if (!room) return; Object.assign(pending, patchObj); clearTimeout(presenceTimer); presenceTimer = setTimeout(() => { const p = pending; pending = {}; room.presence(p).catch(() => {}); }, 120); }
-function onViewChange() { if (!room) return; const c = unP(W / 2, H / 2); if (c) presence({ c: [+c[0].toFixed(4), +c[1].toFixed(4)], z: +T.k.toFixed(2) }); }
+function onViewChange() { if (!room) return; const c = unP(W / 2, H / 2); if (c) presence({ c: [+c[0].toFixed(4), +c[1].toFixed(4)], z: +zk().toFixed(2) }); }
 let lastMove = 0;
 mapEl.addEventListener('pointermove', e => {
   if (!room || e.pointerType === 'touch') return; const now = performance.now(); if (now - lastMove < 50) return; lastMove = now;
@@ -1879,14 +2474,14 @@ function followBanner() { const pe = S.peers.find(p => p.peer === S.follow); if 
 function goToPeer(pe, dur) {
   const pr = pe.presence || {};
   if (pr.sel && S.places.get(pr.sel) && S.sel !== pr.sel) { S.sel = pr.sel; renderAll(); }
-  if (Array.isArray(pr.c) && isFinite(pr.z)) { measure(); const [x, y] = base(pr.c); zoomTo(d3.zoomIdentity.translate(W / 2, H / 2).scale(Math.max(0.45, Math.min(110, pr.z))).translate(-x, -y), dur); }
+  if (Array.isArray(pr.c) && isFinite(pr.z)) zoomTo(viewAt(pr.c, pr.z), dur);
 }
 
 /* ---------- menu ---------- */
 function renderMenu() {
   $('#menu').innerHTML = (PWA ? `<button type="button" data-m="share">${icon('share')}<span>Share trip file</span></button><label>${icon('upload')}<span>Import a trip file</span><input type="file" class="tripImport" accept=".json,application/json" hidden></label><button type="button" data-m="settings">${icon('settings')}<span>Trip settings</span></button>` : `<label>${icon('upload')}<span>Import the old map's export</span><input type="file" id="importOld" accept=".json,application/json" hidden></label>`)
     + (canEdit() ? `<button type="button" data-m="paste">${icon('clip')}<span>Add from a site or email</span></button><button type="button" data-m="pdf">${icon('doc')}<span>Import a booking PDF</span></button>` : '') + `<a href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener" class="mlink">${icon('link')}<span>Set up the Add to Tabi button</span></a>`
-    + `<button type="button" data-m="rail">${icon('train')}<span>${railOn ? 'Hide' : 'Show'} Shinkansen lines</span></button><button type="button" data-m="fit">${icon('fit')}<span>Show all of Japan</span></button>`
+    + `${TRIP_COUNTRY() === 'JP' ? `<button type="button" data-m="rail">${icon('train')}<span>${railOn ? 'Hide' : 'Show'} Shinkansen lines</span></button>` : ''}<button type="button" data-m="fit">${icon('fit')}<span>Show all of ${esc(COUNTRY().name)}</span></button><button type="button" data-m="detail">${icon('map')}<span>${glOn ? 'Use the simple map' : 'Use the detailed street map'}</span></button>${PWA && glOn ? `<button type="button" data-m="offline">${icon('download')}<span>Save maps for offline</span></button>` : ''}`
     + `<div class="note">Map data: MLIT National Land Numerical Information, Natural Earth and GeoNames.</div>` + (PWA ? `<div class="note">Each phone keeps its own copy and works offline. To sync, share your trip file and import it on the other phone. The newest change wins.</div>` : '');
 }
 function toggleMenu(open) { if (open) renderMenu(); $('#menu').hidden = !open; $('#moreBtn').setAttribute('aria-expanded', String(open)); }
@@ -1894,8 +2489,10 @@ $('#moreBtn').onclick = e => { e.stopPropagation(); toggleMenu($('#menu').hidden
 document.addEventListener('click', e => { if (!e.target.closest('#menu,#moreBtn')) toggleMenu(false); });
 $('#menu').addEventListener('click', e => {
   const b = e.target.closest('[data-m]'); if (!b) return; const m = b.dataset.m; toggleMenu(false);
-  if (m === 'rail') { railOn = !railOn; mapEl.classList.toggle('no-rail', !railOn); pref('rail', railOn ? 'on' : 'off'); }
-  if (m === 'fit') { if (isPhone()) setView('map'); zoomTo(japanView()); }
+  if (m === 'rail') { railOn = !railOn; mapEl.classList.toggle('no-rail', !railOn); pref('rail', railOn ? 'on' : 'off'); if (GL && GL.getLayer('tabi-rail')) GL.setLayoutProperty('tabi-rail', 'visibility', railOn ? 'visible' : 'none'); }
+  if (m === 'detail') { glOn = !glOn; pref('detail', glOn ? 'on' : 'off'); if (glOn) { glTried = false; startGL(true); } else stopGL(); }
+  if (m === 'offline') saveMapsOffline();
+  if (m === 'fit') { if (isPhone()) setView('map'); zoomTo(countryView()); }
   if (m === 'share' && PWA) exportTrip();
   if (m === 'paste') addFromSite();
   if (m === 'pdf') addFromPdf();
@@ -1928,6 +2525,7 @@ function renderAll(skipProfiles) {
   renderHeader(); renderDays(); renderNav(); renderPanel(); renderRoute(); renderPins(); renderCard();
   if (!skipProfiles) refreshProfiles();
 }
+uiReady = true; onCountry();
 
 /* ---------- boot: offline phone app ---------- */
 addEventListener('resize', () => { renderNav(); if (!isPhone() && S.tab === 'more') { S.tab = 'today'; renderPanel(); } });
@@ -1938,7 +2536,7 @@ async function exportTrip() {
   for (const p of S.places.values()) for (const f of p.photos) if (f.d && S.photos.get(f.d)) photos[f.d] = S.photos.get(f.d).data;
   const st = local.settings || {};
   const data = { format: 'tabi-trip', version: 1, exportedAt: Date.now(), from: st.me || '',
-    settings: { title: st.title, start: st.start, end: st.end, rate: st.rate, budget: st.budget, names: st.names }, places: local.places, spend: local.spend, deleted: local.deleted, photos };
+    settings: { title: st.title, start: st.start, end: st.end, rate: st.rate, budget: st.budget, names: st.names, country: st.country || 'JP', home: st.home || 'AUD' }, places: local.places, spend: local.spend, deleted: local.deleted, photos };
   const name = `${(st.title || 'trip').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'trip'}-${today()}.json`;
   const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
   try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: st.title || 'Our trip' }); return; } }
@@ -1951,6 +2549,10 @@ async function importTrip(data) {
   let added = 0, updated = 0, removed = 0, pics = 0;
   const st = data.settings && typeof data.settings === 'object' ? data.settings : {};
   const ls = local.settings;
+  // a new phone takes the trip's country and home currency (the rate belongs with them)
+  const fresh = !Object.keys(local.places || {}).length;
+  if (fresh && COUNTRIES[st.country] && st.country !== (ls.country || 'JP')) { ls.country = st.country; ls.rate = 0; }
+  if (fresh && HOMES.includes(st.home) && st.home !== (ls.home || 'AUD')) { ls.home = st.home; ls.rate = 0; }
   if (!ls.start && isIso(st.start) && isIso(st.end)) { ls.start = st.start; ls.end = st.end; }
   if (!ls.title && typeof st.title === 'string') ls.title = st.title.slice(0, 60);
   if (!ls.names && Array.isArray(st.names)) ls.names = st.names.slice(0, 2).map(x => String(x || '').slice(0, 24));
@@ -1983,27 +2585,65 @@ async function importTripFile(input) {
   } catch (e) { toast("That file isn't a Tabi trip file."); }
 }
 function closeSettings() { const s = $('#setScrim'); if (s) s.remove(); }
+// today's rate: how much of the trip's currency one unit of home money buys
+async function fetchRate(home, cur) {
+  if (home === cur) return 1;
+  const c = new AbortController(), t = setTimeout(() => c.abort(), 7000);
+  try { const r = await fetch(`https://open.er-api.com/v6/latest/${home}`, { signal: c.signal }); const j = r.ok ? await r.json() : null; const v = j && j.rates && +j.rates[cur]; return v > 0 ? +(v >= 100 ? v.toFixed(1) : v >= 10 ? v.toFixed(2) : v.toFixed(4)) : 0; }
+  catch (e) { return 0; } finally { clearTimeout(t); }
+}
 function openSettings(first) {
   closeSettings();
   const st = local.settings || {}, names = Array.isArray(st.names) ? st.names : [];
+  const has = Object.keys(local.places || {}).length > 0, cc = COUNTRIES[st.country] ? st.country : 'JP', home = HOMES.includes(st.home) ? st.home : 'AUD';
   const el = document.createElement('div'); el.className = 'scrim'; el.id = 'setScrim';
+  const opt = (v, label, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(label)}</option>`;
   el.innerHTML = `<form class="dlg" id="setForm" novalidate><div class="dlg-h"><h2>${first ? 'Welcome to Tabi' : 'Trip settings'}</h2>${first ? '' : `<button class="iconbtn" type="button" data-sx aria-label="Close">${icon('x')}</button>`}</div>
     <div class="dlg-b">${first ? `<p style="margin:0;font:500 15px/1.5 var(--font);color:var(--ink-2)">Tabi keeps your trip on this phone and works without internet. Import the trip file you were sent, or set up a new trip below.</p><label class="btn btn-primary">${icon('upload')}Import a trip file<input type="file" class="tripImport" accept=".json,application/json" hidden></label>` : ''}
       <div class="field"><label for="stMe">Your name</label><input class="input" id="stMe" autocomplete="given-name" value="${esc(st.me || '')}" placeholder="Shown on things you add"></div>
-      <div class="field"><label for="stTitle">Trip name</label><input class="input" id="stTitle" value="${esc(st.title || '')}" placeholder="Japan 2026"></div>
+      <div class="field"><label for="stCountry">Country</label><select class="input" id="stCountry"${has ? ' disabled' : ''}>${COUNTRY_LIST.map(c => opt(c.code, c.name, c.code === cc)).join('')}</select>
+        <small class="hint" id="stCountryHint">${has ? 'Set when the trip was made. Start a new trip to change it.' : 'Sets the phrases, money, local names and the keepsake book.'}</small></div>
+      <div class="field"><label for="stTitle">Trip name</label><input class="input" id="stTitle" value="${esc(st.title || '')}" placeholder="${esc(COUNTRIES[cc].sample.title)}"></div>
       <div class="g2"><div class="field"><label for="stStart">First day</label><input class="input" type="date" id="stStart" value="${esc(st.start || '')}"></div><div class="field"><label for="stEnd">Fly home</label><input class="input" type="date" id="stEnd" value="${esc(st.end || '')}"></div></div>
-      <div class="g2"><div class="field"><label for="stN0">Traveller one</label><input class="input" id="stN0" value="${esc(names[0] || st.me || '')}"></div><div class="field"><label for="stN1">Traveller two</label><input class="input" id="stN1" value="${esc(names[1] || '')}"></div></div></div>
+      <div class="g2"><div class="field"><label for="stN0">Traveller one</label><input class="input" id="stN0" value="${esc(names[0] || st.me || '')}"></div><div class="field"><label for="stN1">Traveller two</label><input class="input" id="stN1" value="${esc(names[1] || '')}"></div></div>
+      <div class="g2"><div class="field"><label for="stHome">Home money</label><select class="input" id="stHome">${HOMES.map(h => opt(h, `${CUR[h].pre.trim()} ${CUR[h].name}`, h === home)).join('')}</select></div>
+        <div class="field"><label for="stRate" id="stRateLbl"></label><div class="row2"><input class="input num" id="stRate" inputmode="decimal" value="${esc(st.rate || '')}"><button class="btn" type="button" id="stRateGet">Today's rate</button></div></div></div>
+      <small class="hint" id="stRateNote"></small></div>
     <div class="dlg-f"><button class="btn btn-primary" type="submit">${first ? 'Start a new trip' : 'Save'}</button>${first ? '' : '<button class="btn" type="button" data-sx>Cancel</button>'}</div></form>`;
   document.body.appendChild(el);
+  const cSel = $('#stCountry'), hSel = $('#stHome'), rate = $('#stRate'), note = $('#stRateNote');
+  let auto = !st.rate; // the rate fills itself in until someone types one
+  const sync = () => {
+    const c = COUNTRIES[cSel.value], h = CUR[hSel.value], l = CUR[c.cur];
+    $('#stRateLbl').textContent = `${h.pre.trim()}1 buys`; rate.placeholder = `${l.pre.trim()} ${c.cur === 'JPY' && hSel.value === 'AUD' ? '113' : ''}`.trim();
+    $('#stTitle').placeholder = c.sample.title;
+    note.textContent = hSel.value === c.cur ? `${c.name} uses your home money, so no rate is needed.` : `How many ${l.name.toLowerCase()} one ${h.pre.trim()} buys. Tabi uses it to show prices in ${/^(Australian|Canadian|Singapore|US|NZ|NT)\b/.test(h.name) ? h.name : h.name.toLowerCase()}.`;
+  };
+  const getRate = async loud => {
+    const c = COUNTRIES[cSel.value], h = hSel.value, key = h + c.cur; if (h === c.cur) { rate.value = 1; return; }
+    if (navigator.onLine === false) { if (loud) toast('Connect to the internet to get today\'s rate, or type it in.'); return; }
+    note.textContent = 'Getting today\'s rate…';
+    const v = await fetchRate(h, c.cur); if (!el.isConnected || hSel.value + COUNTRIES[cSel.value].cur !== key) return;
+    if (v) { rate.value = v; auto = true; sync(); note.textContent += ` Today's rate filled in: ${CUR[h].pre.trim()}1 = ${CUR[c.cur].pre}${v}.`; }
+    else { sync(); if (loud) toast('The rate couldn\'t be fetched. Type it in instead.'); }
+  };
+  sync(); if (auto && !has) getRate(false);
+  cSel.addEventListener('change', () => { sync(); if (auto) { rate.value = ''; getRate(false); } });
+  hSel.addEventListener('change', () => { sync(); if (auto || !has) { rate.value = ''; getRate(false); } });
+  rate.addEventListener('input', () => { auto = false; });
+  $('#stRateGet').onclick = () => getRate(true);
   el.addEventListener('click', e => { if (e.target.closest('[data-sx]')) closeSettings(); });
   el.addEventListener('change', e => { if (e.target.classList.contains('tripImport')) importTripFile(e.target); });
   el.querySelector('form').addEventListener('submit', e => {
     e.preventDefault();
     const s = $('#stStart').value, en = $('#stEnd').value;
     if (!isIso(s) || !isIso(en) || en <= s) { toast('Pick the first day and a later fly-home day.'); return; }
-    const me = $('#stMe').value.trim().slice(0, 24);
-    local.settings = { ...local.settings, me, title: $('#stTitle').value.trim().slice(0, 60) || 'Our trip', start: s, end: en, names: [$('#stN0').value.trim().slice(0, 24) || me || 'Me', $('#stN1').value.trim().slice(0, 24) || 'Partner'], seen: true };
+    const rv = parseFloat(String(rate.value).replace(',', '.'));
+    if (rate.value.trim() && !(rv > 0 && rv < 1e6)) { rate.focus(); toast('Enter the rate as a number, or leave it empty.'); return; }
+    const me = $('#stMe').value.trim().slice(0, 24), country = has ? cc : cSel.value, c = COUNTRIES[country];
+    local.settings = { ...local.settings, me, country, home: hSel.value, rate: rv > 0 ? rv : 0, title: $('#stTitle').value.trim().slice(0, 60) || c.sample.title.replace(/\d{4}$/, s.slice(0, 4)), start: s, end: en, names: [$('#stN0').value.trim().slice(0, 24) || me || 'Me', $('#stN1').value.trim().slice(0, 24) || 'Partner'], seen: true };
     S.meId = me ? 'n:' + me : 'local'; saveLocal(); applyLocal(); closeSettings(); scrollDaysToToday();
+    if (!has) fitPlaces(0);
   });
 }
 async function boot() {
@@ -2011,11 +2651,12 @@ async function boot() {
   S.mode = 'local'; loadLocal();
   S.meId = local.settings.me ? 'n:' + local.settings.me : 'local';
   try { S.photos = new Map(Object.entries(await idb.all())); } catch (e) {}
-  mapSel.call(zoomer.transform, japanView());
+  mapSel.call(zoomer.transform, countryView());
   setView(isPhone() ? S.tab : 'map');
   renderLegend(); applyLocal(); scrollDaysToToday();
   if (S.places.size) fitPlaces(0);
   if (!local.settings.seen) openSettings(true);
+  setTimeout(() => startGL(), 400);
 }
 boot();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
