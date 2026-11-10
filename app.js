@@ -1685,7 +1685,7 @@ function moreHTML() {
     item('stamps', BOOK().title, glyph('see'), `${n.filter(p => p.visited).length} ${BOOK().count}`) +
     item('phrases', phrasesTitle(), glyph('food'), COUNTRY().words ? `Words and customs that differ in ${esc(COUNTRY().name)}` : `${esc(LANG())} to show staff and drivers`) +
     (canEdit() ? `<div class="sec"><span class="label">Add from websites</span><div class="acts"><button class="btn" type="button" data-paste>${icon('clip')}Paste from a site or email</button><button class="btn" type="button" data-pdf>${icon('doc')}Import a booking PDF</button><button class="btn" type="button" data-gmimport>${icon('download')}Import a Google Maps list</button><a class="btn" href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener">${icon('link')}Set up the Add to Tabi button</a></div><div class="fine">On a booking or ticket page in Safari or Brave, tap your Add to Tabi bookmark, then come back here and paste. Booking PDFs saved in Files can be imported too. A Saved or shared Google Maps list comes in as maybes. Add ticket screenshots from a place's card.</div></div>` : '') +
-    (PWA ? `<div class="sec"><span class="label">This phone</span><div class="acts"><button class="btn" type="button" data-act="share">${icon('share')}Share trip file</button><label class="btn">${icon('upload')}Import trip file<input type="file" class="tripImport" accept=".json,application/json" hidden></label><button class="btn" type="button" data-act="settings">${icon('settings')}Trip settings</button></div><div class="fine">Each phone keeps its own copy. To sync, share your trip file and import it on the other phone. The newest change wins.</div></div>` : '');
+    (PWA ? `<div class="sec"><span class="label">This phone</span><div class="acts"><button class="btn" type="button" data-act="share">${icon('share')}Share trip file</button><label class="btn">${icon('upload')}Import trip file<input type="file" class="tripImport" accept=".json,application/json" hidden></label><button class="btn" type="button" data-act="settings">${icon('settings')}Trip settings</button><button class="btn" type="button" data-act="trips">${icon('route')}Trips and next country</button></div><div class="fine">Each phone keeps its own copy. To sync, share your trip file and import it on the other phone. The newest change wins.</div></div>` : '');
 }
 
 /* panel events */
@@ -1708,7 +1708,7 @@ $('#pbody').addEventListener('click', async e => {
     else { dx.dataset.armed = '1'; dx.innerHTML = '<span style="font:700 12px var(--font);color:var(--red-ink)">Delete?</span>'; setTimeout(() => { if (dx.isConnected) { delete dx.dataset.armed; dx.innerHTML = icon('x'); } }, 3000); }
     return;
   }
-  const act = t.closest('[data-act]'); if (act && PWA) { if (act.dataset.act === 'share') exportTrip(); if (act.dataset.act === 'settings') openSettings(false); return; }
+  const act = t.closest('[data-act]'); if (act && PWA) { if (act.dataset.act === 'share') exportTrip(); if (act.dataset.act === 'settings') openSettings(false); if (act.dataset.act === 'trips') openTrips(); return; }
   if (t.closest('#qnPin')) { quickNote(true); return; }
   if (t.closest('[data-nav]')) return;
   const r = t.closest('[data-id]'); if (r) select(r.dataset.id);
@@ -2613,7 +2613,7 @@ function goToPeer(pe, dur) {
 
 /* ---------- menu ---------- */
 function renderMenu() {
-  $('#menu').innerHTML = (PWA ? `<button type="button" data-m="share">${icon('share')}<span>Share trip file</span></button><label>${icon('upload')}<span>Import a trip file</span><input type="file" class="tripImport" accept=".json,application/json" hidden></label><button type="button" data-m="settings">${icon('settings')}<span>Trip settings</span></button>` : `<label>${icon('upload')}<span>Import the old map's export</span><input type="file" id="importOld" accept=".json,application/json" hidden></label>`)
+  $('#menu').innerHTML = (PWA ? `<button type="button" data-m="share">${icon('share')}<span>Share trip file</span></button><label>${icon('upload')}<span>Import a trip file</span><input type="file" class="tripImport" accept=".json,application/json" hidden></label><button type="button" data-m="settings">${icon('settings')}<span>Trip settings</span></button><button type="button" data-m="trips">${icon('route')}<span>Trips and next country</span></button>` : `<label>${icon('upload')}<span>Import the old map's export</span><input type="file" id="importOld" accept=".json,application/json" hidden></label>`)
     + (canEdit() ? `<button type="button" data-m="paste">${icon('clip')}<span>Add from a site or email</span></button><button type="button" data-m="pdf">${icon('doc')}<span>Import a booking PDF</span></button><button type="button" data-m="gm">${icon('download')}<span>Import a Google Maps list</span></button>` : '') + `<a href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener" class="mlink">${icon('link')}<span>Set up the Add to Tabi button</span></a>`
     + `${TRIP_COUNTRY() === 'JP' ? `<button type="button" data-m="rail">${icon('train')}<span>${railOn ? 'Hide' : 'Show'} Shinkansen lines</span></button>` : ''}<button type="button" data-m="fit">${icon('fit')}<span>Show all of ${esc(COUNTRY().name)}</span></button><button type="button" data-m="detail">${icon('map')}<span>${glOn ? 'Use the simple map' : 'Use the detailed street map'}</span></button>${PWA && glOn ? `<button type="button" data-m="offline">${icon('download')}<span>Save maps for offline</span></button>` : ''}`
     + `<div class="note">Map data: MLIT National Land Numerical Information, Natural Earth and GeoNames.</div>` + (PWA ? `<div class="note">Each phone keeps its own copy and works offline. To sync, share your trip file and import it on the other phone. The newest change wins.</div>` : '');
@@ -2632,6 +2632,7 @@ $('#menu').addEventListener('click', e => {
   if (m === 'pdf') addFromPdf();
   if (m === 'gm') openListImport(null);
   if (m === 'settings' && PWA) openSettings(false);
+  if (m === 'trips' && PWA) openTrips();
 });
 $('#menu').addEventListener('change', e => {
   if (e.target.id === 'importOld') importOld(e.target);
@@ -2914,7 +2915,7 @@ async function exportTrip() {
   for (const p of S.places.values()) for (const f of p.photos) if (f.d && S.photos.get(f.d)) photos[f.d] = S.photos.get(f.d).data;
   const st = local.settings || {};
   const data = { format: 'tabi-trip', version: 1, exportedAt: Date.now(), from: st.me || '',
-    settings: { title: st.title, start: st.start, end: st.end, rate: st.rate, budget: st.budget, names: st.names, country: st.country || 'JP', home: st.home || 'AUD', at: st.at || 0 }, places: local.places, spend: local.spend, deleted: local.deleted, photos };
+    settings: { title: st.title, start: st.start, end: st.end, rate: st.rate, budget: st.budget, names: st.names, country: st.country || 'JP', home: st.home || 'AUD', at: st.at || 0, tid: st.tid, journey: st.journey }, places: local.places, spend: local.spend, deleted: local.deleted, photos };
   const name = `${(st.title || 'trip').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'trip'}-${today()}.json`;
   const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
   try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: st.title || 'Our trip' }); return; } }
@@ -2965,11 +2966,102 @@ async function importTripFile(input) {
   try {
     const data = JSON.parse(await f.text());
     if (!data || data.format !== 'tabi-trip') throw 0;
+    // a file from a different trip never mixes into this one: it opens that trip, or adds it, and this one stays saved
+    const fst = data.settings && typeof data.settings === 'object' ? data.settings : {}, ft = tripId(fst), blank = !Object.keys(local.places || {}).length && !Object.keys(local.spend || {}).length;
+    if (ft !== tripId(local.settings) && blank && !local.settings.journey) { if (fst.tid) local.settings.tid = String(fst.tid).slice(0, 40); if (fst.journey) local.settings.journey = String(fst.journey).slice(0, 40); }
+    else if (ft !== tripId(local.settings)) {
+      const me = local.settings.me, parked = localStorage.getItem(LKEY + '.' + ft); parkTrip();
+      let next = null; try { next = parked ? JSON.parse(parked) : null; } catch (e) {}
+      local = next && next.places ? { spend: {}, deleted: {}, settings: {}, ...next } : { places: {}, spend: {}, deleted: {}, settings: { me, tid: ft === 'first' ? undefined : ft, journey: fst.journey ? String(fst.journey).slice(0, 40) : undefined } };
+      localStorage.removeItem(LKEY + '.' + ft);
+      const r = await importTrip(data); noteTrip();
+      try { sessionStorage.setItem('tabi.toast', `${local.settings.title || 'The other trip'} is open now. ${r.added} new, ${r.updated} updated. Your other trip is still saved under Trips.`); } catch (e) {}
+      location.reload(); return;
+    }
     const r = await importTrip(data); closeSettings();
     const bits = [r.added && `${r.added} new`, r.updated && `${r.updated} updated`, r.removed && `${r.removed} removed`, r.pics && `${r.pics} photos`].filter(Boolean);
     toast(bits.length ? 'Imported: ' + bits.join(', ') : 'Already up to date');
     fitPlaces(); scrollDaysToToday();
   } catch (e) { toast("That file isn't a Tabi trip file."); }
+}
+/* ---------- trips: several trips kept on this phone, and one trip carried on into another country ----------
+   The open trip lives where it always has (LKEY). The others wait under LKEY.<id>, and TKEY lists them all.
+   A trip made before this existed has no id and is called 'first', on both phones, so their files still match.
+   Trips that share a 'journey' are parts of one continuous trip (Japan, then Korea). */
+const TKEY = 'tabi.trips.v1';
+const tripId = st => (st && st.tid) || 'first', journeyId = st => (st && st.journey) || tripId(st);
+function tripsReg() { let r = null; try { r = JSON.parse(localStorage.getItem(TKEY) || 'null'); } catch (e) {} return r && Array.isArray(r.list) ? r : { list: [] }; }
+function saveReg(r) { try { localStorage.setItem(TKEY, JSON.stringify(r)); } catch (e) {} }
+function tripLine(d) {
+  const st = d.settings || {}, x = Object.values(d.spend || {}).reduce((s, e) => s + (+e.amount || 0), 0);
+  return { id: tripId(st), journey: journeyId(st), title: st.title || 'Trip', country: COUNTRIES[st.country] ? st.country : 'JP', start: st.start || '', end: st.end || '', home: st.home || 'AUD', rate: +st.rate || 0, places: Object.values(d.places || {}).filter(p => p && p.kind !== 'note').length, spent: x };
+}
+// keep the open trip's line in the list up to date
+function noteTrip() { if (!local.settings.seen) return; const r = tripsReg(), c = tripLine(local), i = r.list.findIndex(t => t.id === c.id); if (i >= 0) r.list[i] = c; else r.list.push(c); r.active = c.id; saveReg(r); }
+function parkTrip() { if (!local.settings.seen) return true; noteTrip(); try { localStorage.setItem(LKEY + '.' + tripId(local.settings), JSON.stringify(local)); return true; } catch (e) { toast('This phone is out of space, so the trip could not be put aside.'); return false; } }
+function openTrip(id, dropBlank) {
+  const raw = localStorage.getItem(LKEY + '.' + id); if (!raw) { toast("That trip couldn't be found on this phone."); return; }
+  if (!dropBlank && !parkTrip()) return;
+  pref('legAsk', today()); // chosen by hand today, so no offer to switch back
+  try { localStorage.setItem(LKEY, raw); localStorage.removeItem(LKEY + '.' + id); const r = tripsReg(); r.active = id; saveReg(r); } catch (e) { toast('This phone is out of space.'); return; }
+  location.reload();
+}
+const NEXT_GUESS = { JP: 'KR', KR: 'JP', TW: 'JP', TH: 'VN', VN: 'TH', ID: 'TH', IT: 'FR', FR: 'ES', ES: 'PT', PT: 'ES', GR: 'IT', DE: 'FR', GB: 'FR', US: 'JP', NZ: 'JP' };
+function startTrip(next) {
+  const st = local.settings; if (!parkTrip()) return;
+  const cc = COUNTRIES[st.country] ? st.country : 'JP';
+  local = { places: {}, spend: {}, deleted: {}, settings: { me: st.me, names: st.names, home: st.home, tid: newId('t'), ...(next ? { journey: journeyId(st), after: cc, from: st.title || COUNTRIES[cc].name, start: st.end, country: NEXT_GUESS[cc] || 'JP', budget: 0 } : {}) } };
+  pref('legAsk', today()); saveLocal(); location.reload();
+}
+// photos and tickets kept for a trip, found wherever they sit in its places
+function tripPhotoIds(d) { const ids = []; const walk = v => { if (!v || typeof v !== 'object') return; for (const [k, x] of Object.entries(v)) { if (k === 'd' && typeof x === 'string') ids.push(x); else walk(x); } }; walk(d.places); return ids; }
+async function removeTrip(id) {
+  const r = tripsReg(), t = r.list.find(t => t.id === id); if (!t || id === tripId(local.settings)) return;
+  if (!await ask(`Delete ${t.title}?`, `This removes ${t.title} and its ${t.places} place${t.places === 1 ? '' : 's'}, spending and photos from this phone. It can't be undone. Share its trip file first if you want a copy.`, 'Delete the trip', 'Keep it')) return;
+  try { const d = JSON.parse(localStorage.getItem(LKEY + '.' + id) || 'null'); if (d) for (const pid of tripPhotoIds(d)) { idb.del(pid).catch(() => {}); S.photos.delete(pid); } } catch (e) {}
+  localStorage.removeItem(LKEY + '.' + id); r.list = r.list.filter(t => t.id !== id); saveReg(r); openTrips(); toast(`${t.title} deleted`);
+}
+// a small yes or no sheet
+function ask(title, text, yes, no) {
+  return new Promise(res => {
+    const el = document.createElement('div'); el.className = 'scrim'; el.style.zIndex = 70;
+    el.innerHTML = `<div class="dlg" role="alertdialog" aria-label="${esc(title)}" style="width:min(420px,100%)"><div class="dlg-h"><h2>${esc(title)}</h2></div><div class="dlg-b"><p class="gm-p">${esc(text)}</p></div><div class="dlg-f"><button class="btn btn-primary" type="button" data-y>${esc(yes)}</button><button class="btn" type="button" data-n>${esc(no)}</button></div></div>`;
+    el.addEventListener('click', e => { const y = e.target.closest('[data-y]'), n = e.target.closest('[data-n]') || e.target === el; if (y || n) { el.remove(); res(!!y); } });
+    document.body.appendChild(el);
+  });
+}
+const tripDates = t => isIso(t.start) && isIso(t.end) ? `${fmtDay(t.start).replace(/^\w+,?\s*/, '')} to ${fmtDay(t.end).replace(/^\w+,?\s*/, '')}` : 'No dates yet';
+function closeTrips() { const s = $('#tripScrim'); if (s) s.remove(); }
+function openTrips() {
+  closeTrips(); toggleMenu(false); noteTrip();
+  const r = tripsReg(), mine = tripId(local.settings), list = r.list.slice().sort((a, b) => (a.start || '9').localeCompare(b.start || '9'));
+  const legs = list.filter(t => t.journey === journeyId(local.settings)), homes = new Set(legs.map(t => t.home));
+  const whole = legs.length > 1 && homes.size === 1 && legs.every(t => t.rate > 0 || !t.spent) ? legs.reduce((s, t) => s + (t.rate > 0 ? t.spent / t.rate : 0), 0) : null;
+  const el = document.createElement('div'); el.className = 'scrim'; el.id = 'tripScrim';
+  el.innerHTML = `<div class="dlg" role="dialog" aria-label="Trips"><div class="dlg-h"><h2>Trips</h2><button class="iconbtn" type="button" data-tx aria-label="Close">${icon('x')}</button></div>
+    <div class="dlg-b"><div class="trips">${list.map(t => { const part = list.filter(o => o.journey === t.journey), n = part.indexOf(t) + 1;
+      return `<div class="trip ${t.id === mine ? 'on' : ''}"><span class="tflag">${esc(t.country)}</span><span class="tmain"><b>${esc(t.title)}</b><small>${esc([COUNTRIES[t.country].name, tripDates(t), `${t.places} place${t.places === 1 ? '' : 's'}`].join(' · '))}</small>${part.length > 1 ? `<small>Part ${n} of ${part.length} of one trip</small>` : ''}</span>${t.id === mine ? '<span class="chip booked">Open now</span>' : `<span class="tacts"><button class="btn btn-sm" type="button" data-topen="${esc(t.id)}">Open</button><button class="iconbtn" type="button" data-tdel="${esc(t.id)}" aria-label="Delete ${esc(t.title)}">${icon('trash')}</button></span>`}</div>`; }).join('')}</div>
+      ${whole != null ? `<p class="gm-p">Whole trip so far: <b>${esc(CUR[legs[0].home].pre)}${Math.round(whole).toLocaleString('en-AU')}</b> logged across ${esc(legs.map(t => COUNTRIES[t.country].name).join(', ').replace(/, ([^,]*)$/, ' and $1'))}.</p>` : ''}
+      <div class="acts"><button class="btn btn-primary" type="button" data-tnext>${icon('route')}Continue to another country</button><button class="btn" type="button" data-tnew>${icon('plus')}Start a separate trip</button></div>
+      <div class="fine">Continuing keeps this as one trip: your names and home money carry over, and the new country brings its own map, phrases, money and keepsake book. Each part keeps its own places and spending, and Tabi offers to switch when the dates move on. Nothing is removed from the trip you leave.</div></div>
+    <div class="dlg-f"><button class="btn" type="button" data-tx>Close</button></div></div>`;
+  el.addEventListener('click', e => {
+    const t = e.target;
+    if (t === el || t.closest('[data-tx]')) { closeTrips(); return; }
+    const o = t.closest('[data-topen]'); if (o) { openTrip(o.dataset.topen); return; }
+    const d = t.closest('[data-tdel]'); if (d) { removeTrip(d.dataset.tdel); return; }
+    if (t.closest('[data-tnext]')) startTrip(true);
+    if (t.closest('[data-tnew]')) startTrip(false);
+  });
+  document.body.appendChild(el);
+}
+// when the dates have moved on to the next part of the trip, offer to open it (once a day)
+async function nextLegPrompt() {
+  const st = local.settings, d = today(), r = tripsReg();
+  if (isIso(st.start) && isIso(st.end) && d >= st.start && d <= st.end) return;
+  const t = r.list.find(t => t.id !== tripId(st) && t.journey === journeyId(st) && isIso(t.start) && isIso(t.end) && d >= t.start && d <= t.end);
+  if (!t || pref('legAsk') === d) return; pref('legAsk', d);
+  if (await ask(`On to ${COUNTRIES[t.country].name}?`, `Today falls in ${t.title}. Open it now? ${st.title || 'This part'} stays saved under Trips.`, `Open ${t.title}`, 'Not now')) openTrip(t.id);
 }
 function closeSettings() { const s = $('#setScrim'); if (s) s.remove(); }
 // today's rate: how much of the trip's currency one unit of home money buys
@@ -2983,10 +3075,11 @@ function openSettings(first) {
   closeSettings();
   const st = local.settings || {}, names = Array.isArray(st.names) ? st.names : [];
   const has = Object.keys(local.places || {}).length > 0, cc = COUNTRIES[st.country] ? st.country : 'JP', home = HOMES.includes(st.home) ? st.home : 'AUD';
+  const others = first ? tripsReg().list.filter(t => t.id !== tripId(st)).length : 0;
   const el = document.createElement('div'); el.className = 'scrim'; el.id = 'setScrim';
   const opt = (v, label, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(label)}</option>`;
-  el.innerHTML = `<form class="dlg" id="setForm" novalidate><div class="dlg-h"><h2>${first ? 'Welcome to Tabi' : 'Trip settings'}</h2>${first ? '' : `<button class="iconbtn" type="button" data-sx aria-label="Close">${icon('x')}</button>`}</div>
-    <div class="dlg-b">${first ? `<p style="margin:0;font:500 15px/1.5 var(--font);color:var(--ink-2)">Tabi keeps your trip on this phone and works without internet. Import the trip file you were sent, or set up a new trip below.</p><label class="btn btn-primary">${icon('upload')}Import a trip file<input type="file" class="tripImport" accept=".json,application/json" hidden></label>` : ''}
+  el.innerHTML = `<form class="dlg" id="setForm" novalidate><div class="dlg-h"><h2>${!first ? 'Trip settings' : st.after ? 'Next country' : others ? 'New trip' : 'Welcome to Tabi'}</h2>${first ? '' : `<button class="iconbtn" type="button" data-sx aria-label="Close">${icon('x')}</button>`}</div>
+    <div class="dlg-b">${first && st.after ? `<p style="margin:0;font:500 15px/1.5 var(--font);color:var(--ink-2)">Carry on from <b>${esc(st.from || 'your trip')}</b>. Pick the next country and its dates. Your names and home money come with you, and ${esc(st.from || 'the earlier part')} stays saved under Trips.</p>` : first ? `<p style="margin:0;font:500 15px/1.5 var(--font);color:var(--ink-2)">${others ? 'Set up the new trip below, or import a trip file you were sent. Your other trips stay saved on this phone.' : 'Tabi keeps your trip on this phone and works without internet. Import the trip file you were sent, or set up a new trip below.'}</p><label class="btn btn-primary">${icon('upload')}Import a trip file<input type="file" class="tripImport" accept=".json,application/json" hidden></label>` : ''}
       <div class="field"><label for="stMe">Your name</label><input class="input" id="stMe" autocomplete="given-name" value="${esc(st.me || '')}" placeholder="Shown on things you add"></div>
       <div class="field"><label for="stCountry">Country</label><select class="input" id="stCountry"${has ? ' disabled' : ''}>${COUNTRY_LIST.map(c => opt(c.code, c.name, c.code === cc)).join('')}</select>
         <small class="hint" id="stCountryHint">${has ? 'Set when the trip was made. Start a new trip to change it.' : 'Sets the phrases, money, local names and the keepsake book.'}</small></div>
@@ -2996,7 +3089,7 @@ function openSettings(first) {
       <div class="g2"><div class="field"><label for="stHome">Home money</label><select class="input" id="stHome">${HOMES.map(h => opt(h, `${CUR[h].pre.trim()} ${CUR[h].name}`, h === home)).join('')}</select></div>
         <div class="field"><label for="stRate" id="stRateLbl"></label><div class="row2"><input class="input num" id="stRate" inputmode="decimal" value="${esc(st.rate || '')}"><button class="btn" type="button" id="stRateGet">Today's rate</button></div></div></div>
       <small class="hint" id="stRateNote"></small></div>
-    <div class="dlg-f"><button class="btn btn-primary" type="submit">${first ? 'Start a new trip' : 'Save'}</button>${first ? '' : '<button class="btn" type="button" data-sx>Cancel</button>'}</div></form>`;
+    <div class="dlg-f"><button class="btn btn-primary" type="submit">${!first ? 'Save' : st.after ? 'Continue the trip' : 'Start a new trip'}</button>${first ? (others ? '<button class="btn" type="button" data-back>Cancel and go back</button>' : '') : '<button class="btn" type="button" data-sx>Cancel</button>'}</div></form>`;
   document.body.appendChild(el);
   const cSel = $('#stCountry'), hSel = $('#stHome'), rate = $('#stRate'), note = $('#stRateNote');
   let auto = !st.rate; // the rate fills itself in until someone types one
@@ -3019,7 +3112,7 @@ function openSettings(first) {
   hSel.addEventListener('change', () => { sync(); if (auto || !has) { rate.value = ''; getRate(false); } });
   rate.addEventListener('input', () => { auto = false; });
   $('#stRateGet').onclick = () => getRate(true);
-  el.addEventListener('click', e => { if (e.target.closest('[data-sx]')) closeSettings(); });
+  el.addEventListener('click', e => { if (e.target.closest('[data-sx]')) closeSettings(); if (e.target.closest('[data-back]')) { const r = tripsReg(), t = r.list.find(t => t.id === r.active) || r.list[r.list.length - 1]; if (t) openTrip(t.id, true); } });
   el.addEventListener('change', e => { if (e.target.classList.contains('tripImport')) importTripFile(e.target); });
   el.querySelector('form').addEventListener('submit', e => {
     e.preventDefault();
@@ -3029,7 +3122,10 @@ function openSettings(first) {
     if (rate.value.trim() && !(rv > 0 && rv < 1e6)) { rate.focus(); toast('Enter the rate as a number, or leave it empty.'); return; }
     const me = $('#stMe').value.trim().slice(0, 24), country = has ? cc : cSel.value, c = COUNTRIES[country];
     local.settings = { ...local.settings, me, country, home: hSel.value, rate: rv > 0 ? rv : 0, title: $('#stTitle').value.trim().slice(0, 60) || c.sample.title.replace(/\d{4}$/, s.slice(0, 4)), start: s, end: en, names: [$('#stN0').value.trim().slice(0, 24) || me || 'Me', $('#stN1').value.trim().slice(0, 24) || 'Partner'], seen: true, at: Date.now() };
-    S.meId = me ? 'n:' + me : 'local'; saveLocal(); applyLocal(); closeSettings(); scrollDaysToToday();
+    S.meId = me ? 'n:' + me : 'local'; saveLocal(); noteTrip();
+    // a new trip or the next country starts clean: the map, phrases and money all follow the country
+    if (first && others) { location.reload(); return; }
+    applyLocal(); closeSettings(); scrollDaysToToday();
     if (!has) fitPlaces(0);
   });
 }
@@ -3042,7 +3138,8 @@ async function boot() {
   setView(isPhone() ? S.tab : 'map');
   renderLegend(); applyLocal(); scrollDaysToToday();
   if (S.places.size) fitPlaces(0);
-  if (!local.settings.seen) openSettings(true);
+  if (!local.settings.seen) openSettings(true); else { noteTrip(); nextLegPrompt(); }
+  try { const m = sessionStorage.getItem('tabi.toast'); if (m) { sessionStorage.removeItem('tabi.toast'); setTimeout(() => toast(m), 600); } } catch (e) {}
   setTimeout(() => startGL(), 400);
   resumeLocate();
 }
