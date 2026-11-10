@@ -1,6 +1,6 @@
 {
-  "name": "Tabi trip map",
-  "short_name": "Tabi",
+  "name": "Waymark trip map",
+  "short_name": "Waymark",
   "description": "An offline trip map for two: stays, plans, spending, phrases and a stamp book.",
   "start_url": "./?source=home",
   "scope": "./",

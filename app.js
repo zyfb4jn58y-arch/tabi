@@ -1,7 +1,7 @@
 (() => {
 'use strict';
-/* ---------- Add to Tabi: the page reader ----------
-   Used by the Add to Tabi button on a booking site and by the app. It reads structured data (JSON-LD),
+/* ---------- Add to Waymark: the page reader ----------
+   Used by the Add to Waymark button on a booking site and by the app. It reads structured data (JSON-LD),
    the page address and the title, and returns plain fields. Booking text is read in the app (clip_text.js),
    so the button stays small and gets better whenever the app updates. */
 const TPB = (() => {
@@ -104,7 +104,7 @@ const TPB = (() => {
     }
     return { list: typeof L[4] === 'string' ? L[4].trim().slice(0, 60) : '', places };
   }
-  const encode = rec => rec.places ? `Add to Tabi: ${rec.places.length} places${rec.list ? ' from ' + rec.list : ''}\ntabi:1:${JSON.stringify(rec)}` : `Add to Tabi: ${rec.name || rec.ja || 'a place'}\ntabi:1:${JSON.stringify(rec)}`;
+  const encode = rec => rec.places ? `Add to Waymark: ${rec.places.length} places${rec.list ? ' from ' + rec.list : ''}\ntabi:1:${JSON.stringify(rec)}` : `Add to Waymark: ${rec.name || rec.ja || 'a place'}\ntabi:1:${JSON.stringify(rec)}`;
   return { fromLD, fromUrl, title, coords, merge, encode, decode, kindOfHost, JP, p2, num, isoOf, dayMs, listId, gmList };
 })();
 
@@ -164,7 +164,7 @@ const TP = (() => {
     while ((m = re.exec(text))) { const from = m.index + m[0].length; const d = ds.find(h => h.i >= from && h.i - from <= span); if (d) return d.iso; }
     return '';
   }
-  // amounts in any currency Tabi knows. Yen and Australian dollars read exactly as they always have;
+  // amounts in any currency Waymark knows. Yen and Australian dollars read exactly as they always have;
   // a bare $ is the trip's own dollar, else the home dollar. 1.234,50 € and €1,234.50 both read as 1234.5.
   const DOLLARS = ['AUD', 'USD', 'NZD', 'CAD', 'SGD'];
   const localCur = () => typeof COUNTRY === 'function' ? COUNTRY().cur : 'JPY';
@@ -1222,8 +1222,8 @@ function parseCoords(s) {
   return Math.abs(lat) <= 85 && Math.abs(lng) <= 180 && (lat || lng) ? { lat, lng } : null;
 }
 
-/* ---------- detailed map: streets, stations, buildings and places, in Tabi's colours ----------
-   MapLibre draws OpenStreetMap data (vector tiles from OpenFreeMap, free and keyless) underneath Tabi's own
+/* ---------- detailed map: streets, stations, buildings and places, in Waymark's colours ----------
+   MapLibre draws OpenStreetMap data (vector tiles from OpenFreeMap, free and keyless) underneath Waymark's own
    pins, route and controls. It starts after the simple map is up. If it can't load (offline with nothing saved,
    or blocked), the simple map stays, so the map always works. */
 const GLJS = PWA ? 'vendor/maplibre-gl.js' : 'https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.js';
@@ -1243,7 +1243,7 @@ function loadGLJS() {
 }
 const isDark = () => document.documentElement.dataset.theme === 'dark' || (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
 
-// the map style: colours come from Tabi's tokens, so it follows light and dark
+// the map style: colours come from Waymark's tokens, so it follows light and dark
 function glStyle() {
   const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim(), dark = isDark();
   const C = {
@@ -1441,7 +1441,7 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-nav]
 function renderHeader() {
   const t = today(), dn = TRIP_DAYS.indexOf(t) + 1;
   $('#brandTitle').textContent = S.settings.title;
-  $('#brandSub').textContent = `Tabi · ${fmtShort(TRIP.start)} to ${fmtShort(TRIP.end)}`;
+  $('#brandSub').textContent = `Waymark · ${fmtShort(TRIP.start)} to ${fmtShort(TRIP.end)}`;
   $('#daycount').innerHTML = dn > 0 ? `<b>DAY</b><span class="num">${dn}/${TRIP_DAYS.length}</span>` : t < TRIP.start ? `<b>IN</b><span class="num">${diffDays(t, TRIP.start)} days</span>` : `<b>HOME</b><span>Welcome back</span>`;
   const live = $('#live'); live.classList.toggle('ok', S.mode === 'shared');
   const names = [...new Set(S.peers.map(p => firstName(p.by)))];
@@ -1684,7 +1684,7 @@ function moreHTML() {
     item('notes', 'Notes and maybes', glyph('note'), `${n.filter(p => p.kind === 'note').length} notes`) +
     item('stamps', BOOK().title, glyph('see'), `${n.filter(p => p.visited).length} ${BOOK().count}`) +
     item('phrases', phrasesTitle(), glyph('food'), COUNTRY().words ? `Words and customs that differ in ${esc(COUNTRY().name)}` : `${esc(LANG())} to show staff and drivers`) +
-    (canEdit() ? `<div class="sec"><span class="label">Add from websites</span><div class="acts"><button class="btn" type="button" data-paste>${icon('clip')}Paste from a site or email</button><button class="btn" type="button" data-pdf>${icon('doc')}Import a booking PDF</button><button class="btn" type="button" data-gmimport>${icon('download')}Import a Google Maps list</button><a class="btn" href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener">${icon('link')}Set up the Add to Tabi button</a></div><div class="fine">On a booking or ticket page in Safari or Brave, tap your Add to Tabi bookmark, then come back here and paste. Booking PDFs saved in Files can be imported too. A Saved or shared Google Maps list comes in as maybes. Add ticket screenshots from a place's card.</div></div>` : '') +
+    (canEdit() ? `<div class="sec"><span class="label">Add from websites</span><div class="acts"><button class="btn" type="button" data-paste>${icon('clip')}Paste from a site or email</button><button class="btn" type="button" data-pdf>${icon('doc')}Import a booking PDF</button><button class="btn" type="button" data-gmimport>${icon('download')}Import a Google Maps list</button><a class="btn" href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener">${icon('link')}Set up the Add to Waymark button</a></div><div class="fine">On a booking or ticket page in Safari or Brave, tap your Add to Waymark bookmark, then come back here and paste. Booking PDFs saved in Files can be imported too. A Saved or shared Google Maps list comes in as maybes. Add ticket screenshots from a place's card.</div></div>` : '') +
     (PWA ? `<div class="sec"><span class="label">This phone</span><div class="acts"><button class="btn" type="button" data-act="share">${icon('share')}Share trip file</button><label class="btn">${icon('upload')}Import trip file<input type="file" class="tripImport" accept=".json,application/json" hidden></label><button class="btn" type="button" data-act="settings">${icon('settings')}Trip settings</button><button class="btn" type="button" data-act="trips">${icon('route')}Trips and next country</button></div><div class="fine">Each phone keeps its own copy. To sync, share your trip file and import it on the other phone. The newest change wins.</div></div>` : '');
 }
 
@@ -2376,7 +2376,7 @@ $('#show').addEventListener('click', async e => {
   }
 });
 
-/* ---------- paste from a site: what the Add to Tabi button copied, or a booking email ---------- */
+/* ---------- paste from a site: what the Add to Waymark button copied, or a booking email ---------- */
 $('#fClipHelp').href = PWA ? 'clip.html' : CLIP_PAGE;
 function cleanCapture(c) {
   const o = {}, s = (v, n) => typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) : '';
@@ -2387,11 +2387,11 @@ function cleanCapture(c) {
   const pv = +c.price; o.price = isFinite(pv) && pv > 0 && pv < 1e8 ? pv : null; o.cur = curSlot(c.cur); o.total = c.total === true;
   if (o.price && o.cur === 'other') { o.priceOther = `${String(c.cur).toUpperCase().slice(0, 3)} ${o.price.toLocaleString('en-AU')}${o.total ? ' total' : ''}`; o.price = null; }
   o.conf = s(c.conf, 60); o.address = s(c.address, 200); o.addressJa = s(c.addressJa, 200); o.phone = s(c.phone, 40);
-  // a location the Add to Tabi button found outside Japan counts only if it's in the trip's country
+  // a location the Add to Waymark button found outside Japan counts only if it's in the trip's country
   if (c.lat == null && Array.isArray(c.geos)) { const g = c.geos.find(g => Array.isArray(g) && isFinite(g[0]) && isFinite(g[1]) && inTripCountry(+g[0], +g[1])); if (g) c = { ...c, lat: +g[0], lng: +g[1] }; }
   const la = +c.lat, ln = +c.lng; if (c.lat != null && isFinite(la) && isFinite(ln) && Math.abs(la) <= 85 && Math.abs(ln) <= 180 && (la || ln)) { o.lat = +la.toFixed(5); o.lng = +ln.toFixed(5); }
   o.url = safeUrl(s(c.url, 600)); o.site = s(c.site, 40); o.room = s(c.room, 80); o.breakfast = c.breakfast === true;
-  // "APB 高円寺" becomes APB Koenji when Tabi knows the Japanese place name; the Japanese stays as the sign
+  // "APB 高円寺" becomes APB Koenji when Waymark knows the Japanese place name; the Japanese stays as the sign
   if (o.name && TP.JP.test(o.name)) {
     let en = o.name, ok = true;
     for (const r of o.name.match(/[\u3040-\u30ff\u3400-\u9fff]+/g) || []) { const g = GAZ.find(g => g.ja === r); if (g) en = en.replace(r, g.n); else ok = false; }
@@ -2458,9 +2458,9 @@ function applyCapture(c, from) {
   const list = got.length > 1 ? got.slice(0, -1).join(', ') + ' and ' + got[got.length - 1] : got.join('');
   const todo = [!F.name.value.trim() ? 'add an English name' : '', hasLoc(draft) ? '' : 'pick it on the map or search below'].filter(Boolean).join(', ');
   if (got.length) pasteNote(`Filled in ${esc(list)}${from ? ' from ' + esc(from) : ''}. ${moved ? 'The pin moved to the location in the booking. ' + esc(jaNote) : ''}${near ? `It's pinned at ${esc(near)} for now; use <b>Pick on map</b> for the exact spot. ` : ''}${todo ? todo.charAt(0).toUpperCase() + todo.slice(1) + ', then check' : 'Check'} it and save.`);
-  else pasteNote("Couldn't find booking details in that. Use the Add to Tabi button on the booking page, or paste the confirmation email text.", true);
+  else pasteNote("Couldn't find booking details in that. Use the Add to Waymark button on the booking page, or paste the confirmation email text.", true);
 }
-// an island, town or sight Tabi already knows, named in the booking: "Kurashi, Teshima Island" or "366 Teshimaieura, ..."
+// an island, town or sight Waymark already knows, named in the booking: "Kurashi, Teshima Island" or "366 Teshimaieura, ..."
 function guessPin(c) {
   if (TRIP_COUNTRY() !== 'JP') return null;
   const clean = t => fold(String(t || '').replace(/\d[\d-]*/g, ' ').replace(/\b(?:island|islands|district|city|town|village|ward|prefecture|gun|shi|cho|machi|japan)\b/gi, ' ').replace(new RegExp('\\b' + COUNTRY().name + '\\b', 'gi'), ' '));
@@ -2500,7 +2500,7 @@ $('#pdfInput').addEventListener('change', async e => {
     const pdf = await readPdf(f);
     pdfPending = pdf.image ? { blob: pdf.image } : null; $('#fKeepWrap').hidden = !pdfPending;
     const r = pdfCapture(pdf);
-    if (r.empty) pasteNote('This PDF is a scanned picture with no text, so Tabi can\'t read the details. Fill them in, and keep the PDF with the place to show at check-in.', true);
+    if (r.empty) pasteNote('This PDF is a scanned picture with no text, so Waymark can\'t read the details. Fill them in, and keep the PDF with the place to show at check-in.', true);
     else applyCapture(r.c, r.from);
   } catch (er) { pasteNote(navigator.onLine === false && !PWA ? 'Reading PDFs needs the internet the first time. Try again when you\'re online.' : 'That PDF couldn\'t be read. Try pasting the booking email instead.', true); }
   btn.classList.remove('busy');
@@ -2614,7 +2614,7 @@ function goToPeer(pe, dur) {
 /* ---------- menu ---------- */
 function renderMenu() {
   $('#menu').innerHTML = (PWA ? `<button type="button" data-m="share">${icon('share')}<span>Share trip file</span></button><label>${icon('upload')}<span>Import a trip file</span><input type="file" class="tripImport" accept=".json,application/json" hidden></label><button type="button" data-m="settings">${icon('settings')}<span>Trip settings</span></button><button type="button" data-m="trips">${icon('route')}<span>Trips and next country</span></button>` : `<label>${icon('upload')}<span>Import the old map's export</span><input type="file" id="importOld" accept=".json,application/json" hidden></label>`)
-    + (canEdit() ? `<button type="button" data-m="paste">${icon('clip')}<span>Add from a site or email</span></button><button type="button" data-m="pdf">${icon('doc')}<span>Import a booking PDF</span></button><button type="button" data-m="gm">${icon('download')}<span>Import a Google Maps list</span></button>` : '') + `<a href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener" class="mlink">${icon('link')}<span>Set up the Add to Tabi button</span></a>`
+    + (canEdit() ? `<button type="button" data-m="paste">${icon('clip')}<span>Add from a site or email</span></button><button type="button" data-m="pdf">${icon('doc')}<span>Import a booking PDF</span></button><button type="button" data-m="gm">${icon('download')}<span>Import a Google Maps list</span></button>` : '') + `<a href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener" class="mlink">${icon('link')}<span>Set up the Add to Waymark button</span></a>`
     + `${TRIP_COUNTRY() === 'JP' ? `<button type="button" data-m="rail">${icon('train')}<span>${railOn ? 'Hide' : 'Show'} Shinkansen lines</span></button>` : ''}<button type="button" data-m="fit">${icon('fit')}<span>Show all of ${esc(COUNTRY().name)}</span></button><button type="button" data-m="detail">${icon('map')}<span>${glOn ? 'Use the simple map' : 'Use the detailed street map'}</span></button>${PWA && glOn ? `<button type="button" data-m="offline">${icon('download')}<span>Save maps for offline</span></button>` : ''}`
     + `<div class="note">Map data: MLIT National Land Numerical Information, Natural Earth and GeoNames.</div>` + (PWA ? `<div class="note">Each phone keeps its own copy and works offline. To sync, share your trip file and import it on the other phone. The newest change wins.</div>` : '');
 }
@@ -2664,9 +2664,9 @@ function renderAll(skipProfiles) {
 uiReady = true; onCountry();
 
 /* ---------- Google Maps lists: a Saved list, or a list somebody shared, comes in as maybes ----------
-   Three ways in: the Add to Tabi button on the list's page (it copies every place), a file from Google Takeout
+   Three ways in: the Add to Waymark button on the list's page (it copies every place), a file from Google Takeout
    (a list's .csv, or Saved Places.json), or a My Maps .kml. Each place becomes a maybe, pinned on the map. */
-const JP_WIDE = [122, 20, 154, 46.5]; // Okinawa to Hokkaido, as the Add to Tabi button has always judged Japan
+const JP_WIDE = [122, 20, 154, 46.5]; // Okinawa to Hokkaido, as the Add to Waymark button has always judged Japan
 function inTripCountry(lat, lng) {
   const c = COUNTRY().bbox, b = TRIP_COUNTRY() === 'JP' ? JP_WIDE : [c[0] - 1.5, c[1] - 1.5, c[2] + 1.5, c[3] + 1.5];
   return lng >= b[0] && lng <= b[2] && lat >= b[1] && lat <= b[3];
@@ -2769,15 +2769,15 @@ function drawListIntro(miss) {
   const el = $('#gmScrim'); if (!el) return;
   el.innerHTML = `<div class="dlg" role="dialog" aria-label="Import from Google Maps"><div class="dlg-h"><h2>Import from Google Maps</h2><button class="iconbtn" type="button" data-gx aria-label="Close">${icon('x')}</button></div>
     <div class="dlg-b"><p class="gm-p">Bring in one of your <b>Saved</b> lists, or a list somebody shared with you. Every place is added as a maybe and pinned on the map, ready to plan.</p>
-      <ol class="gm-steps"><li>In Google Maps, open the list, tap <b>Share</b> and copy its link.</li><li>Paste the link into <b>Safari's address bar</b>, so the list opens in Safari and not in the Google Maps app.</li><li>Tap your <b>Add to Tabi</b> bookmark, then <b>Copy for Tabi</b>.</li><li>Come back here and tap <b>Paste the list</b>.</li></ol>
+      <ol class="gm-steps"><li>In Google Maps, open the list, tap <b>Share</b> and copy its link.</li><li>Paste the link into <b>Safari's address bar</b>, so the list opens in Safari and not in the Google Maps app.</li><li>Tap your <b>Add to Waymark</b> bookmark, then <b>Copy for Waymark</b>.</li><li>Come back here and tap <b>Paste the list</b>.</li></ol>
       <div class="acts"><button class="btn btn-primary" type="button" id="gmPaste">${icon('clip')}Paste the list</button><label class="btn">${icon('upload')}Choose a file<input type="file" class="gmFile" accept=".csv,.json,.kml,text/csv,application/json,application/vnd.google-earth.kml+xml" hidden></label></div>
       <textarea class="input" id="gmBox" rows="3" ${miss === 'box' ? '' : 'hidden'} aria-label="Paste the list here" placeholder="Tap and hold here, then tap Paste."></textarea>
       <div class="pastenote miss" role="status" ${miss && miss !== 'box' ? '' : 'hidden'}>${miss && miss !== 'box' ? esc(miss) : ''}</div>
-      <div class="fine">A file works too: a list's .csv or Saved Places.json from Google Takeout, or a .kml from My Maps. Lists copied with an Add to Tabi bookmark saved before this update won't work, so <a href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener">set the button up again</a> first.</div></div>
+      <div class="fine">A file works too: a list's .csv or Saved Places.json from Google Takeout, or a .kml from My Maps. Lists copied with an Add to Waymark bookmark saved before this update won't work, so <a href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener">set the button up again</a> first.</div></div>
     <div class="dlg-f"><button class="btn" type="button" data-gx>Close</button></div></div>`;
   if (miss === 'box') $('#gmBox').focus();
 }
-function listMiss() { drawListIntro("That doesn't look like a Google Maps list. Use the Add to Tabi button on the list's page, or choose a file from Google Takeout."); }
+function listMiss() { drawListIntro("That doesn't look like a Google Maps list. Use the Add to Waymark button on the list's page, or choose a file from Google Takeout."); }
 function takeList(text, fname) { const src = readListSource(text, fname); if (src) setListSource(src); else listMiss(); }
 async function listFromClipboard() {
   let text = '';
@@ -2805,12 +2805,12 @@ function listCount() {
 function drawListReview() {
   const el = $('#gmScrim'); if (!el || !GM) return;
   const it = GM.items, dupes = it.filter(i => i.dupe).length, outs = it.filter(i => i.out && !i.dupe).length, noloc = it.filter(i => i.lat == null && !i.dupe).length;
-  const bits = [dupes ? `${dupes} ${dupes === 1 ? 'is' : 'are'} already in Tabi` : '', outs ? `${outs} ${outs === 1 ? 'is' : 'are'} outside ${COUNTRY().name}, so ${outs === 1 ? "it's" : "they're"} left unticked` : '', noloc ? `${noloc} ${noloc === 1 ? 'has' : 'have'} no map location yet, so Tabi will look ${noloc === 1 ? 'it' : 'them'} up` : ''].filter(Boolean);
+  const bits = [dupes ? `${dupes} ${dupes === 1 ? 'is' : 'are'} already in Waymark` : '', outs ? `${outs} ${outs === 1 ? 'is' : 'are'} outside ${COUNTRY().name}, so ${outs === 1 ? "it's" : "they're"} left unticked` : '', noloc ? `${noloc} ${noloc === 1 ? 'has' : 'have'} no map location yet, so Waymark will look ${noloc === 1 ? 'it' : 'them'} up` : ''].filter(Boolean);
   const keep = el.querySelector('.gm-list') ? el.querySelector('.gm-list').scrollTop : 0;
   el.innerHTML = `<div class="dlg" role="dialog" aria-label="Import from Google Maps"><div class="dlg-h"><h2>${esc(GM.list)}</h2><button class="iconbtn" type="button" data-gx aria-label="Close">${icon('x')}</button></div>
     <div class="dlg-b"><div class="sec-h"><span class="label">${it.length} place${it.length === 1 ? '' : 's'} from Google Maps</span><button class="btn btn-sm btn-ghost" type="button" id="gmAll"></button></div>
       ${bits.length ? `<p class="gm-p">${esc(bits.join('. '))}.</p>` : ''}
-      <div class="gm-list">${it.map((p, i) => `<label class="gm-row ${p.dupe ? 'dupe' : ''}"><input type="checkbox" data-gi="${i}" ${p.on ? 'checked' : ''} ${p.dupe ? 'disabled' : ''}>${glyph(p.kind, { status: 'maybe' })}<span><b>${esc(p.n)}</b>${p.ja ? `<span class="ja">${esc(p.ja)}</span>` : ''}<small>${esc([KINDS[p.kind].label, p.dupe ? 'Already in Tabi' : p.out ? 'Outside ' + COUNTRY().name : p.lat == null ? 'No map location yet' : '', p.note || p.a || p.aj].filter(Boolean).join(' · '))}</small></span></label>`).join('')}</div></div>
+      <div class="gm-list">${it.map((p, i) => `<label class="gm-row ${p.dupe ? 'dupe' : ''}"><input type="checkbox" data-gi="${i}" ${p.on ? 'checked' : ''} ${p.dupe ? 'disabled' : ''}>${glyph(p.kind, { status: 'maybe' })}<span><b>${esc(p.n)}</b>${p.ja ? `<span class="ja">${esc(p.ja)}</span>` : ''}<small>${esc([KINDS[p.kind].label, p.dupe ? 'Already in Waymark' : p.out ? 'Outside ' + COUNTRY().name : p.lat == null ? 'No map location yet' : '', p.note || p.a || p.aj].filter(Boolean).join(' · '))}</small></span></label>`).join('')}</div></div>
     <div class="dlg-f"><button class="btn btn-primary" type="button" id="gmGo"></button><button class="btn" type="button" data-gx>Cancel</button></div></div>`;
   el.querySelector('.gm-list').scrollTop = keep; listCount();
 }
@@ -2887,7 +2887,7 @@ function startLocate(fly) {
   }, err => {
     navigator.geolocation.clearWatch(hereWatch); hereWatch = null; $('#zloc').classList.remove('busy', 'on');
     if (err && err.code === 1) pref('here', 'off');
-    if (fly || !first) toast(err && err.code === 1 ? (PWA ? 'Location is turned off for Tabi. Allow it in your phone settings, then try again.' : "Location isn't available here.") : "Couldn't find where you are. Try again in a moment.");
+    if (fly || !first) toast(err && err.code === 1 ? (PWA ? 'Location is turned off for Waymark. Allow it in your phone settings, then try again.' : "Location isn't available here.") : "Couldn't find where you are. Try again in a moment.");
   }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 25000 });
 }
 $('#zloc').onclick = () => startLocate(true);
@@ -2982,7 +2982,7 @@ async function importTripFile(input) {
     const bits = [r.added && `${r.added} new`, r.updated && `${r.updated} updated`, r.removed && `${r.removed} removed`, r.pics && `${r.pics} photos`].filter(Boolean);
     toast(bits.length ? 'Imported: ' + bits.join(', ') : 'Already up to date');
     fitPlaces(); scrollDaysToToday();
-  } catch (e) { toast("That file isn't a Tabi trip file."); }
+  } catch (e) { toast("That file isn't a Waymark trip file."); }
 }
 /* ---------- trips: several trips kept on this phone, and one trip carried on into another country ----------
    The open trip lives where it always has (LKEY). The others wait under LKEY.<id>, and TKEY lists them all.
@@ -3043,7 +3043,7 @@ function openTrips() {
       return `<div class="trip ${t.id === mine ? 'on' : ''}"><span class="tflag">${esc(t.country)}</span><span class="tmain"><b>${esc(t.title)}</b><small>${esc([COUNTRIES[t.country].name, tripDates(t), `${t.places} place${t.places === 1 ? '' : 's'}`].join(' · '))}</small>${part.length > 1 ? `<small>Part ${n} of ${part.length} of one trip</small>` : ''}</span>${t.id === mine ? '<span class="chip booked">Open now</span>' : `<span class="tacts"><button class="btn btn-sm" type="button" data-topen="${esc(t.id)}">Open</button><button class="iconbtn" type="button" data-tdel="${esc(t.id)}" aria-label="Delete ${esc(t.title)}">${icon('trash')}</button></span>`}</div>`; }).join('')}</div>
       ${whole != null ? `<p class="gm-p">Whole trip so far: <b>${esc(CUR[legs[0].home].pre)}${Math.round(whole).toLocaleString('en-AU')}</b> logged across ${esc(legs.map(t => COUNTRIES[t.country].name).join(', ').replace(/, ([^,]*)$/, ' and $1'))}.</p>` : ''}
       <div class="acts"><button class="btn btn-primary" type="button" data-tnext>${icon('route')}Continue to another country</button><button class="btn" type="button" data-tnew>${icon('plus')}Start a separate trip</button></div>
-      <div class="fine">Continuing keeps this as one trip: your names and home money carry over, and the new country brings its own map, phrases, money and keepsake book. Each part keeps its own places and spending, and Tabi offers to switch when the dates move on. Nothing is removed from the trip you leave.</div></div>
+      <div class="fine">Continuing keeps this as one trip: your names and home money carry over, and the new country brings its own map, phrases, money and keepsake book. Each part keeps its own places and spending, and Waymark offers to switch when the dates move on. Nothing is removed from the trip you leave.</div></div>
     <div class="dlg-f"><button class="btn" type="button" data-tx>Close</button></div></div>`;
   el.addEventListener('click', e => {
     const t = e.target;
@@ -3078,8 +3078,8 @@ function openSettings(first) {
   const others = first ? tripsReg().list.filter(t => t.id !== tripId(st)).length : 0;
   const el = document.createElement('div'); el.className = 'scrim'; el.id = 'setScrim';
   const opt = (v, label, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(label)}</option>`;
-  el.innerHTML = `<form class="dlg" id="setForm" novalidate><div class="dlg-h"><h2>${!first ? 'Trip settings' : st.after ? 'Next country' : others ? 'New trip' : 'Welcome to Tabi'}</h2>${first ? '' : `<button class="iconbtn" type="button" data-sx aria-label="Close">${icon('x')}</button>`}</div>
-    <div class="dlg-b">${first && st.after ? `<p style="margin:0;font:500 15px/1.5 var(--font);color:var(--ink-2)">Carry on from <b>${esc(st.from || 'your trip')}</b>. Pick the next country and its dates. Your names and home money come with you, and ${esc(st.from || 'the earlier part')} stays saved under Trips.</p>` : first ? `<p style="margin:0;font:500 15px/1.5 var(--font);color:var(--ink-2)">${others ? 'Set up the new trip below, or import a trip file you were sent. Your other trips stay saved on this phone.' : 'Tabi keeps your trip on this phone and works without internet. Import the trip file you were sent, or set up a new trip below.'}</p><label class="btn btn-primary">${icon('upload')}Import a trip file<input type="file" class="tripImport" accept=".json,application/json" hidden></label>` : ''}
+  el.innerHTML = `<form class="dlg" id="setForm" novalidate><div class="dlg-h"><h2>${!first ? 'Trip settings' : st.after ? 'Next country' : others ? 'New trip' : 'Welcome to Waymark'}</h2>${first ? '' : `<button class="iconbtn" type="button" data-sx aria-label="Close">${icon('x')}</button>`}</div>
+    <div class="dlg-b">${first && st.after ? `<p style="margin:0;font:500 15px/1.5 var(--font);color:var(--ink-2)">Carry on from <b>${esc(st.from || 'your trip')}</b>. Pick the next country and its dates. Your names and home money come with you, and ${esc(st.from || 'the earlier part')} stays saved under Trips.</p>` : first ? `<p style="margin:0;font:500 15px/1.5 var(--font);color:var(--ink-2)">${others ? 'Set up the new trip below, or import a trip file you were sent. Your other trips stay saved on this phone.' : 'Waymark keeps your trip on this phone and works without internet. Import the trip file you were sent, or set up a new trip below.'}</p><label class="btn btn-primary">${icon('upload')}Import a trip file<input type="file" class="tripImport" accept=".json,application/json" hidden></label>` : ''}
       <div class="field"><label for="stMe">Your name</label><input class="input" id="stMe" autocomplete="given-name" value="${esc(st.me || '')}" placeholder="Shown on things you add"></div>
       <div class="field"><label for="stCountry">Country</label><select class="input" id="stCountry"${has ? ' disabled' : ''}>${COUNTRY_LIST.map(c => opt(c.code, c.name, c.code === cc)).join('')}</select>
         <small class="hint" id="stCountryHint">${has ? 'Set when the trip was made. Start a new trip to change it.' : 'Sets the phrases, money, local names and the keepsake book.'}</small></div>
@@ -3097,7 +3097,7 @@ function openSettings(first) {
     const c = COUNTRIES[cSel.value], h = CUR[hSel.value], l = CUR[c.cur];
     $('#stRateLbl').textContent = `${h.pre.trim()}1 buys`; rate.placeholder = `${l.pre.trim()} ${c.cur === 'JPY' && hSel.value === 'AUD' ? '113' : ''}`.trim();
     $('#stTitle').placeholder = c.sample.title;
-    note.textContent = hSel.value === c.cur ? `${c.name} uses your home money, so no rate is needed.` : `How many ${l.name.toLowerCase()} one ${h.pre.trim()} buys. Tabi uses it to show prices in ${/^(Australian|Canadian|Singapore|US|NZ|NT)\b/.test(h.name) ? h.name : h.name.toLowerCase()}.`;
+    note.textContent = hSel.value === c.cur ? `${c.name} uses your home money, so no rate is needed.` : `How many ${l.name.toLowerCase()} one ${h.pre.trim()} buys. Waymark uses it to show prices in ${/^(Australian|Canadian|Singapore|US|NZ|NT)\b/.test(h.name) ? h.name : h.name.toLowerCase()}.`;
   };
   const getRate = async loud => {
     const c = COUNTRIES[cSel.value], h = hSel.value, key = h + c.cur; if (h === c.cur) { rate.value = 1; return; }

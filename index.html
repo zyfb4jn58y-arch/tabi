@@ -8,13 +8,13 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Tabi">
-<meta name="description" content="Tabi: an offline trip map for two. Stays, plans, spending, phrases and a stamp book.">
+<meta name="apple-mobile-web-app-title" content="Waymark">
+<meta name="description" content="Waymark: an offline trip map for two. Stays, plans, spending, phrases and a stamp book.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <style>:root{padding-top:env(safe-area-inset-top,0px);color-scheme:light}[hidden]{display:none!important}img{max-width:100%}</style>
-<title>Tabi</title>
+<title>Waymark</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@500;700;900&display=swap">
@@ -67,7 +67,7 @@ body{margin:0;background:var(--grain),var(--paper);color:var(--ink);font:500 15p
 button,input,select,textarea{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 ::selection{background:var(--yellow-tint)}
-/* Tabi components. Ochre paper, indigo rules, colours from the painting that carry meaning:
+/* Waymark components. Ochre paper, indigo rules, colours from the painting that carry meaning:
    vermilion (--red) = where we sleep, ultramarine (--blue) = what we see and make,
    ochre (--yellow) = what we eat, indigo ink = how we move. */
 .num{font-variant-numeric:tabular-nums}
@@ -443,7 +443,7 @@ textarea.input{resize:vertical;min-height:88px;line-height:1.5}
 #lake{fill:var(--sea);stroke:var(--coast);stroke-width:1;vector-effect:non-scaling-stroke}
 #rail path{fill:none;stroke:var(--rail);stroke-width:2;vector-effect:non-scaling-stroke}
 #map.no-rail #rail{display:none}
-/* the detailed map sits under Tabi's pins; the simple map hides once it's ready */
+/* the detailed map sits under Waymark's pins; the simple map hides once it's ready */
 #gl{position:absolute;inset:0;opacity:0;transition:opacity .45s ease}
 #map.gl #gl{opacity:1}
 #map.gl #svg{display:none}
@@ -723,8 +723,8 @@ details.more .inner{display:flex;flex-direction:column;gap:12px;margin-top:12px}
 <div class="app" id="app">
   <header class="top">
     <div class="logo">
-      <svg viewBox="0 0 34 34" aria-hidden="true"><rect x="0" y="0" width="16" height="16" fill="var(--red)"/><circle cx="26" cy="8" r="8" fill="var(--blue)"/><path d="M0 34 8 18l8 16z" fill="var(--yellow)"/><rect x="18" y="18" width="16" height="16" fill="var(--ink)"/></svg>
-      <div><b id="brandTitle">Tabi</b><small id="brandSub">Trip map</small></div>
+      <svg viewBox="0 0 34 34" aria-hidden="true"><defs><clipPath id="wmk"><rect x="0" y="7" width="20" height="20"/></clipPath></defs><rect x="0" y="7" width="20" height="20" fill="var(--red)"/><circle cx="23" cy="17" r="10.5" fill="var(--blue)"/><circle cx="23" cy="17" r="10.5" fill="var(--ink)" clip-path="url(#wmk)"/></svg>
+      <div><b id="brandTitle">Waymark</b><small id="brandSub">Trip map</small></div>
     </div>
     <div class="daychip" id="daycount"></div>
     <div class="spacer"></div>
@@ -790,7 +790,7 @@ details.more .inner{display:flex;flex-direction:column;gap:12px;margin-top:12px}
         <textarea class="input" id="fPasteBox" rows="3" hidden aria-label="Paste booking details here" placeholder="Tap and hold here, then tap Paste. A booking email works too."></textarea>
         <div class="pastenote" id="fPasteNote" role="status" hidden></div>
         <label class="keep" id="fKeepWrap" hidden><input type="checkbox" id="fKeepPdf" checked><span>Keep the PDF with this place, to show at check-in</span></label>
-        <a class="fine" id="fClipHelp" href="clip.html" target="_blank" rel="noopener">Set up the Add to Tabi button</a>
+        <a class="fine" id="fClipHelp" href="clip.html" target="_blank" rel="noopener">Set up the Add to Waymark button</a>
       </div>
       <div class="g2">
         <div class="field"><label for="fName">Name</label><input class="input" id="fName" autocomplete="off" placeholder="Benesse House"></div>
