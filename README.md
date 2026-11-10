@@ -10,6 +10,8 @@ Tabi (旅, journey) is an offline trip map for two people travelling together. I
 - **Phrases:** the local language to show staff and taxi drivers, full screen. For the UK, the US and New Zealand this becomes **Local words**: the words and customs that differ.
 - **Notes, to-dos and a keepsake book** of everywhere you've been: ink stamps in Japan, Korea and Taiwan, postcards in Europe, the UK and Southeast Asia, and embroidered patches in the US and New Zealand.
 - **Add to Tabi:** a bookmark for Safari or Brave (or a Share sheet Shortcut) that reads a booking, ticket or place page and copies it. In Tabi, tap **+** then **Paste from a site** and the dates, times, price, booking reference, address and map location are filled in. Booking email text works too. Set it up from `clip.html`.
+- **Google Maps lists:** bring in a Saved list, or a list somebody shared with you. Open the list in Safari, tap **Add to Tabi**, then in Tabi tap **+** and **Paste from a site** (or **Notes**, then **Import from Google Maps**). Every place comes in as a maybe, pinned on the map and grouped by city under Notes. A list's `.csv` or `Saved Places.json` from Google Takeout, or a My Maps `.kml`, works too.
+- **Where you are:** tap the target button on the map to see your own dot, and **Today** lists your places and maybes nearest to you with walking times. Open a maybe and tap **Plan it for today** to move it onto today's plan.
 - **Booking PDFs:** tap **+** then **Import a PDF** and choose a confirmation PDF from Files. Tabi reads the name, dates, check-in and check-out times, price, booking reference, phone and address, and can keep page one with the place as a ticket. It reads PDFs on the phone, offline, with pdf.js.
 - **Tickets:** attach ticket screenshots (or a PDF in Safari) to a place and show them full screen on white for scanning, even offline.
 
@@ -32,11 +34,11 @@ Japan has an offline place list for search. Elsewhere, searching for a place nee
 
 ## Sharing changes between two phones
 
-Each phone keeps its own copy. To share changes, open **More** and tap **Share trip file**, then send it with AirDrop or Messages. On the other phone, save it to Files and choose **Import a trip file**. For each place, the newer change wins. Expenses and photos from both phones are merged.
+Each phone keeps its own copy. To share changes, open **More** and tap **Share trip file**, then send it with AirDrop or Messages. On the other phone, save it to Files and choose **Import a trip file**. For each place, the newer change wins. Expenses and photos from both phones are merged, and trip settings (dates, names, rate and budget) follow whichever phone changed them last.
 
 ## Privacy
 
-This repository holds only the app's code and the base map. Your trip, spending and photos stay on your phone, and in trip files you choose to send.
+This repository holds only the app's code and the base map. Your trip, spending and photos stay on your phone, and in trip files you choose to send. Your location is only used on the phone to draw your dot and measure distances; it is never saved or sent.
 
 ## Publishing with GitHub Pages
 

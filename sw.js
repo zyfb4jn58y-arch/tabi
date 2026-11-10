@@ -1,6 +1,6 @@
-const V = 'tabi-v9';
+const V = 'tabi-v10';
 const SHELL = ['./', 'index.html', 'app.js', 'geo.js', 'vendor/d3.min.js', 'vendor/topojson.min.js', 'manifest.webmanifest', 'clip.html', 'vendor/pdf.min.js', 'vendor/pdf.worker.min.js', 'vendor/maplibre-gl.js', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
-self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
+self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL).then(() => { c.add('vendor/world-50m.json').catch(() => {}); })).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V && k !== 'tabi-fonts' && k !== 'tabi-tiles').map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {
   const req = e.request; if (req.method !== 'GET') return;

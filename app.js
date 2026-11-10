@@ -79,9 +79,33 @@ const TPB = (() => {
   }
   // merge in priority order: earlier sources win for each field
   function merge(...src) { const out = {}; for (const s of src) if (s) for (const [k, v] of Object.entries(s)) if (out[k] == null || out[k] === '') out[k] = v; return out; }
-  const encode = rec => `Add to Tabi: ${rec.name || rec.ja || 'a place'}\ntabi:1:${JSON.stringify(rec)}`;
   function decode(text) { const m = /tabi:1:(\{[\s\S]*\})/.exec(String(text || '')); if (!m) return null; try { const o = JSON.parse(m[1]); return o && typeof o === 'object' ? o : null; } catch (e) { return null; } }
-  return { fromLD, fromUrl, title, coords, merge, encode, decode, kindOfHost, JP, p2, num, isoOf, dayMs };
+  /* A Google Maps list (a Saved list or one somebody shared): the list's id from a page or request address,
+     and the places from Google's own list reply. Each place keeps its name, map location, address and note. */
+  function listId(href) {
+    let u = String(href || ''); try { u = decodeURIComponent(u); } catch (e) {}
+    const m = /placelists\/list\/([\w-]{10,})/.exec(u) || /!11m\d+!2s([\w-]{10,})/.exec(u) || /entitylist\/getlist[^#]*?!1m\d+!1s([\w-]{10,})/.exec(u);
+    return m ? m[1] : '';
+  }
+  function gmList(d) {
+    const L = Array.isArray(d) && Array.isArray(d[0]) ? d[0] : [], items = Array.isArray(L[8]) ? L[8] : [], places = [];
+    for (const it of items) {
+      if (!Array.isArray(it)) continue;
+      const p = Array.isArray(it[1]) ? it[1] : [], g = Array.isArray(p[5]) ? p[5].filter(v => typeof v === 'number') : [];
+      const o = {}, a = typeof p[4] === 'string' && p[4].trim() ? p[4].trim() : typeof p[2] === 'string' ? p[2].trim() : '';
+      if (g.length >= 2 && Math.abs(g[0]) <= 85 && Math.abs(g[1]) <= 180 && (g[0] || g[1])) { o.lat = +g[0].toFixed(6); o.lng = +g[1].toFixed(6); }
+      o.n = (typeof it[2] === 'string' && it[2].trim() ? it[2].trim() : a ? a.split(',')[0] : o.lat != null ? 'Pinned place' : '').slice(0, 80);
+      if (!o.n) continue;
+      if (a) o.a = a.slice(0, 200);
+      if (typeof it[3] === 'string' && it[3].trim()) o.note = it[3].trim().slice(0, 300);
+      const c = Array.isArray(p[6]) ? p[6][1] : null;
+      if (typeof c === 'string' && /^-?\d{1,20}$/.test(c)) { try { o.cid = BigInt.asUintN(64, BigInt(c)).toString(); } catch (e) {} }
+      places.push(o);
+    }
+    return { list: typeof L[4] === 'string' ? L[4].trim().slice(0, 60) : '', places };
+  }
+  const encode = rec => rec.places ? `Add to Tabi: ${rec.places.length} places${rec.list ? ' from ' + rec.list : ''}\ntabi:1:${JSON.stringify(rec)}` : `Add to Tabi: ${rec.name || rec.ja || 'a place'}\ntabi:1:${JSON.stringify(rec)}`;
+  return { fromLD, fromUrl, title, coords, merge, encode, decode, kindOfHost, JP, p2, num, isoOf, dayMs, listId, gmList };
 })();
 
 /* ---------- booking text reader (app only) ----------
@@ -92,16 +116,23 @@ const TP = (() => {
   const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
   const okDate = (y, m, d) => m >= 1 && m <= 12 && d >= 1 && d <= 31;
   const MONTHS = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+  const MON_X = {}; [['gennaio', 'janvier', 'enero', 'janeiro', 'januar'], ['febbraio', 'février', 'febrero', 'fevereiro', 'februar'], ['marzo', 'mars', 'março', 'märz'], ['aprile', 'avril', 'abril'], ['maggio', 'mai', 'mayo', 'maio'], ['giugno', 'juin', 'junio', 'junho', 'juni'], ['luglio', 'juillet', 'julio', 'julho', 'juli'], ['agosto', 'août'], ['settembre', 'septembre', 'septiembre', 'setiembre', 'setembro'], ['ottobre', 'octobre', 'octubre', 'outubro', 'oktober'], ['novembre', 'noviembre', 'novembro'], ['dicembre', 'décembre', 'diciembre', 'dezembro', 'dezember']].forEach((l, i) => l.forEach(n => { MON_X[n] = i + 1; }));
   const DATE_RES = [
-    [/(20\d\d)\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?/g, m => [+m[1], +m[2], +m[3]]],
+    [/(20\d\d)\s*[-/.年년]\s*(\d{1,2})\s*[-/.月월]\s*(\d{1,2})\s*[日일]?/g, m => [+m[1], +m[2], +m[3]]],
     [new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTHS}\\b\\.?,?(?:\\s+(20\\d\\d))?`, 'gi'), m => [m[3] ? +m[3] : 0, MON[m[2].slice(0, 3).toLowerCase()], +m[1]]],
     [new RegExp(`\\b${MONTHS}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b,?(?:\\s+(20\\d\\d))?`, 'gi'), m => [m[3] ? +m[3] : 0, MON[m[1].slice(0, 3).toLowerCase()], +m[2]]],
-    [/(?<![\d年])(\d{1,2})\s*月\s*(\d{1,2})\s*日/g, m => [0, +m[1], +m[2]]]
+    [/(?<![\d年])(\d{1,2})\s*月\s*(\d{1,2})\s*日/g, m => [0, +m[1], +m[2]]],
+    // 05/11/2026 and 05.11.2026: day first, as most of the world writes it; month first on a US trip
+    [/(?<![\d/.-])(\d{1,2})[/.](\d{1,2})[/.](20\d\d)(?![\d/.-])/g, m => { const a = +m[1], b = +m[2], us = typeof TRIP_COUNTRY === 'function' && TRIP_COUNTRY() === 'US'; return (us && a <= 12) || b > 12 ? [+m[3], a, b] : [+m[3], b, a]; }, true],
+    // 5 novembre 2026, 5 de noviembre de 2026, 5. November 2026: Italian, French, Spanish, Portuguese and German month names
+    [new RegExp(`(?<![\\d.])(\\d{1,2})\\.?\\s+(?:de\\s+)?(${Object.keys(MON_X).join('|')})(?![a-zà-ÿ])\\.?,?(?:\\s+(?:de\\s+)?(20\\d\\d))?`, 'gi'), m => [m[3] ? +m[3] : 0, MON_X[m[2].toLowerCase()], +m[1]], true]
   ];
   // every date in the text, in order, with its position; yearless dates take the year nearest the reference day
   function dates(text, ref) {
     const hits = [];
-    for (const [re, f] of DATE_RES) { re.lastIndex = 0; let m; while ((m = re.exec(text))) { const [y, mo, d] = f(m); if (okDate(y || 2000, mo, d)) hits.push({ i: m.index, end: m.index + m[0].length, y, m: mo, d }); } }
+    // the newer formats (marked true) are read on trips outside Japan only, so Japan bookings read exactly as before
+    const jp = typeof TRIP_COUNTRY !== 'function' || TRIP_COUNTRY() === 'JP';
+    for (const [re, f, extra] of DATE_RES) { if (extra && jp) continue; re.lastIndex = 0; let m; while ((m = re.exec(text))) { const [y, mo, d] = f(m); if (okDate(y || 2000, mo, d)) hits.push({ i: m.index, end: m.index + m[0].length, y, m: mo, d }); } }
     hits.sort((a, b) => a.i - b.i || b.end - a.end);
     const out = []; let last = -1;
     for (const h of hits) { if (h.i < last) continue; last = h.end; out.push(h); }
@@ -693,7 +724,7 @@ const PHRASES_NOW = () => COUNTRY().phrases;
 const S = {
   mode: 'loading', places: new Map(), spend: new Map(), photos: new Map(), rawSettings: {},
   settings: { rate: 113, budget: 0, names: ['Me', 'Partner'], title: 'Our trip', start: '', end: '', country: 'JP', home: 'AUD' },
-  sel: null, tab: 'today', view: 'map', filter: 'week', day: null, cur: 'jpy',
+  sel: null, tab: 'today', view: 'map', filter: 'week', day: null, cur: 'jpy', here: null,
   meId: null, me: null, canWrite: true, profiles: {}, peers: [], follow: null,
   ideas: null, picking: null, playing: false, playDay: null, ready: false, xpend: null
 };
@@ -890,7 +921,7 @@ async function removePlace(id) {
 }
 async function saveSettings(partial) {
   const next = { ...S.rawSettings, ...partial };
-  if (S.mode === 'local') { local.settings = { ...local.settings, ...partial }; saveLocal(); applyLocal(); return true; }
+  if (S.mode === 'local') { local.settings = { ...local.settings, ...partial, at: Date.now() }; saveLocal(); applyLocal(); return true; }
   S.rawSettings = next; applySettings(next); renderAll(true);
   try { await enqueue('trip/settings', () => db.doc('trip/settings').set(next)); return true; } catch (e) { writeErr(e); return false; }
 }
@@ -1014,7 +1045,7 @@ const labelsEl = $('#labels'), LABELS = [];
 
 /* pins */
 const pinsEl = $('#pins');
-let pinEls = new Map(), clusterEls = [], ghostEls = [], cursorEls = new Map(), trainEl = null, popEl = null, spotEl = null;
+let pinEls = new Map(), clusterEls = [], ghostEls = [], cursorEls = new Map(), trainEl = null, popEl = null, spotEl = null, hereEl = null;
 function photoSrc(f) { if (f.a) return '/_blob/' + f.a; if (f.d) { const d = S.photos.get(f.d); return d && typeof d.data === 'string' && d.data.startsWith('data:image/') ? d.data : ''; } return ''; }
 function currentStay() { const t = today(); let cur = null; for (const p of routeStays()) if (p.start <= t) cur = p; return t >= TRIP.start && t <= TRIP.end ? cur : null; }
 function renderPins() {
@@ -1088,6 +1119,7 @@ function positionAll() {
   if (trainEl && trainEl._ll) { const [x, y] = P(trainEl._ll[0], trainEl._ll[1]); place(trainEl, x, y); }
   if (popEl && popEl._ll) { const [x, y] = P(popEl._ll[0], popEl._ll[1]); placePop(x, y); }
   if (spotEl) { const [x, y] = P(spotEl._ll[0], spotEl._ll[1]); place(spotEl, x, y); }
+  if (hereEl && hereEl._ll) { const [x, y] = P(hereEl._ll[0], hereEl._ll[1]); place(hereEl, x, y); }
 }
 function renderRoute() {
   const r = d3.select('#route'); r.selectAll('*').remove();
@@ -1101,7 +1133,7 @@ function renderRoute() {
   if (todo.length) r.append('path').attr('class', 'todo').attr('d', ml(todo));
 }
 function renderLegend() {
-  $('#legend').innerHTML = ['stay', 'see', 'craft', 'food', 'walk', 'move'].map(k => `<span>${glyph(k)}${esc(KINDS[k].label)}</span>`).join('');
+  $('#legend').innerHTML = ['stay', 'see', 'craft', 'food', 'walk', 'move'].map(k => `<span>${glyph(k, { status: 'booked' })}${esc(KINDS[k].label)}</span>`).join('');
 }
 
 /* map clicks */
@@ -1357,7 +1389,7 @@ async function saveMapsOffline() {
   for (let z = 4; z <= 9; z++) { const [x0, y0] = tile(Math.min(...lo), Math.max(...la), z), [x1, y1] = tile(Math.max(...lo), Math.min(...la), z); for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) add(z, x, y); }
   for (const p of pts) for (const [z, r] of [[10, 0], [11, 0], [12, 1], [13, 1], [14, 1]]) { const [x, y] = tile(p.lng, p.lat, z); for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) add(z, x + dx, y + dy); }
   const urls = [...want].map(k => { const [z, x, y] = k.split('/'); return tpl.replace('{z}', z).replace('{x}', x).replace('{y}', y); });
-  for (const f of ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']) for (const r of ['0-255', '256-511', '8192-8447']) urls.push(GL_FONTS.replace('{fontstack}', encodeURIComponent(f)).replace('{range}', r));
+  for (const f of ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']) for (const r of ['0-255', '256-511', '8192-8447', ...({ TH: ['3584-3839'], GR: ['768-1023', '7936-8191'], VN: ['768-1023', '7680-7935'] }[TRIP_COUNTRY()] || [])]) urls.push(GL_FONTS.replace('{fontstack}', encodeURIComponent(f)).replace('{range}', r));
   let n = 0, bad = 0; toast(`Saving maps: 0 of ${urls.length}`);
   const next = async () => { while (urls.length) { const u = urls.shift(); try { const r = await fetch(u); if (!r.ok) bad++; } catch (e) { bad++; } n++; if (n % 40 === 0) toast(`Saving maps: ${n} of ${n + urls.length}`); } };
   await Promise.all([next(), next(), next(), next()]);
@@ -1459,8 +1491,9 @@ function thumbHTML(p, n) {
   const f = picsOf(p)[0]; const src = f ? photoSrc(f) : '';
   return `<span class="thumb">${src ? `<img src="${esc(src)}" alt="" loading="lazy">` : glyph(p.kind, { status: p.status })}${n ? `<span class="n num">${n}</span>` : ''}</span>`;
 }
-function rowHTML(p, cs) {
+function rowHTML(p, cs, far) {
   const n = cs.get(p.id); const bits = [KINDS[p.kind].label, statusLabel(p)];
+  if (far && hereNow() && hasLoc(p) && km(hereNow(), p) < 60) bits.push(distText(km(hereNow(), p)) + ' away');
   if (p.time && p.start) bits.unshift(fmtTime(p.time));
   if (p.kind === 'stay' && p.end) bits.push(`${nightsOf(p)} night${nightsOf(p) === 1 ? '' : 's'}`);
   if (p.price != null) bits.push(money(p.price) + (p.kind === 'stay' ? '/night' : ''));
@@ -1501,7 +1534,7 @@ function todayHTML() {
     const dd = diffDays(t, nx.start);
     const when = sameDay ? (m != null ? untilText(m - now) : 'later today') : dd === 1 ? 'tomorrow' : `in ${dd} days`;
     next = `<div class="block blue" data-id="${esc(nx.id)}" style="cursor:pointer"><div class="sec-h"><span class="label">Next up</span><span class="label" style="color:var(--blue-ink)">${esc(when)}</span></div>
-      <div style="display:flex;gap:12px;align-items:center">${glyph(nx.kind, { status: nx.status, cls: 'g' }).replace('class="g"', 'class="g" style="width:28px;height:28px"')}<div style="min-width:0"><div class="next-time num">${nx.time ? fmtTime(nx.time) : fmtDay(nx.start)}</div><div class="h-head" style="margin-top:4px">${esc(nx.name)}</div></div></div>
+      <div style="display:flex;gap:12px;align-items:center">${glyph(nx.kind, { status: nx.status, cls: 'g' }).replace('class="g"', 'class="g" style="width:28px;height:28px"')}<div style="min-width:0"><div class="next-time num">${nx.time ? fmtTime(nx.time) : sameDay ? 'Today' : fmtDay(nx.start)}</div><div class="h-head" style="margin-top:4px">${esc(nx.name)}</div></div></div>
       ${nx.notes ? `<div class="muted" style="font-size:13px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(nx.notes)}</div>` : ''}${ticketsOf(nx).length ? `<div class="acts"><button class="btn btn-sm" type="button" data-ticket="${esc(nx.id)}">${icon('ticket')}Show ticket</button>${nx.conf ? `<span class="fine" style="align-self:center">Ref ${esc(nx.conf)}</span>` : ''}</div>` : ''}</div>`;
   }
   const tl = (list) => list.length ? `<div class="timeline">${list.map(p => `<button class="tl" type="button" data-id="${esc(p.id)}"><span class="tt">${p.time ? fmtTime(p.time) : p.kind === 'stay' ? 'Stay' : 'Any time'}</span>${glyph(p.kind, { status: p.status })}<span><span class="tn">${esc(p.name)}</span><span class="tm">${esc(KINDS[p.kind].label)}${p.kind === 'stay' && p.checkin ? ' · check-in from ' + fmtTime(p.checkin) : ''}</span></span></button>`).join('')}</div>` : '';
@@ -1514,6 +1547,7 @@ function todayHTML() {
     <div class="sec"><div class="sec-h"><span class="label">Spent today</span><button class="btn btn-sm btn-ghost" type="button" data-nav="spend">${icon('plus')}Add expense</button></div>
       <div class="big-num">${money(spentToday)}${b ? `<span class="muted" style="font-size:14px;font-weight:600;letter-spacing:0"> of ${money(b)}</span>` : ''}</div>
       ${b ? `<div class="meter ${spentToday > b ? 'over' : ''}"><i style="width:${pct}%"></i></div>` : '<div class="muted" style="font-size:13px">Set a daily budget on the Spend tab to track it here.</div>'}</div>
+    ${nearHTML()}
     <div class="sec"><span class="label">Quick</span><div class="quick"><button class="btn" type="button" data-nav="phrases">${icon('chat')}${phrasesTitle()}</button><button class="btn" type="button" data-nav="spend">${icon(moneyIcon())}Convert</button><button class="btn" type="button" data-nav="map">${icon('mapnav')}Map</button></div></div>`;
 }
 const gmaps = p => `https://www.google.com/maps/search/?api=1&query=${p.kind === 'note' || !p.name ? `${p.lat},${p.lng}` : encodeURIComponent(p.name + (p.ja ? ' ' + p.ja : ''))}`;
@@ -1628,7 +1662,8 @@ function notesHTML() {
   let h = viewHead('Notes', todos.length ? `${open} to-do${open === 1 ? '' : 's'} left` : 'Notes and maybes');
   if (canEdit()) h += `<div class="sec"><form class="qn" id="quickNote"><textarea class="input" id="qnText" placeholder="Something to remember, a question for each other, a shop to find"></textarea><div class="r"><label class="check"><input type="checkbox" id="qnTodo">To-do</label><span class="spacer"></span><button class="btn btn-sm" type="button" id="qnPin">${icon('map')}Add and pin</button><button class="btn btn-sm btn-primary" type="submit">${icon('plus')}Add note</button></div></form></div>`;
   h += `<div class="sec">${notes.length ? `<div class="stickies">${notes.map(p => `<div class="sticky ${p.todo ? 'todo' : ''} ${p.done ? 'done' : ''}" data-id="${esc(p.id)}" role="button" tabindex="0">${p.todo ? `<button class="tick" type="button" data-tick="${esc(p.id)}" aria-label="${p.done ? 'Mark not done' : 'Mark done'}">${p.done ? '✓' : ''}</button>` : ''}${p.title ? `<b>${esc(p.title)}</b>` : ''}<span class="t">${esc(p.notes)}</span><small>${esc(firstName(p.by))}${hasLoc(p) ? ' · on the map' : ''}</small></div>`).join('')}</div>` : '<div class="muted" style="font-size:14px">No notes yet.</div>'}</div>`;
-  h += `<div class="sec" style="padding:18px 0 0"><span class="label" style="padding:0 18px">Maybes · ${maybes.length}</span>${maybes.length ? maybes.map(p => rowHTML(p, cs)).join('') : '<div class="muted" style="padding:0 18px 18px;font-size:14px">Mark anything as Maybe to keep it here.</div>'}</div>`;
+  const groups = maybeGroups(maybes);
+  h += `<div class="sec" id="maybesHead" style="padding:18px 0 0;gap:0"><div class="sec-h" style="padding:0 18px 10px"><span class="label">Maybes · ${maybes.length}</span>${canEdit() ? `<button class="btn btn-sm btn-ghost" type="button" data-gmimport>${icon('download')}Import from Google Maps</button>` : ''}</div>${maybes.length ? groups.map(([name, list]) => (groups.length > 1 ? `<div class="areahead">${esc(name)} <small>${list.length}</small></div>` : '') + list.map(p => rowHTML(p, cs, true)).join('')).join('') : '<div class="muted" style="padding:0 18px 18px;font-size:14px">Mark anything as Maybe to keep it here, or bring in a Saved list from Google Maps.</div>'}</div>`;
   return h;
 }
 function stampsHTML() {
@@ -1649,7 +1684,7 @@ function moreHTML() {
     item('notes', 'Notes and maybes', glyph('note'), `${n.filter(p => p.kind === 'note').length} notes`) +
     item('stamps', BOOK().title, glyph('see'), `${n.filter(p => p.visited).length} ${BOOK().count}`) +
     item('phrases', phrasesTitle(), glyph('food'), COUNTRY().words ? `Words and customs that differ in ${esc(COUNTRY().name)}` : `${esc(LANG())} to show staff and drivers`) +
-    (canEdit() ? `<div class="sec"><span class="label">Add from websites</span><div class="acts"><button class="btn" type="button" data-paste>${icon('clip')}Paste from a site or email</button><button class="btn" type="button" data-pdf>${icon('doc')}Import a booking PDF</button><a class="btn" href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener">${icon('link')}Set up the Add to Tabi button</a></div><div class="fine">On a booking or ticket page in Safari or Brave, tap your Add to Tabi bookmark, then come back here and paste. Booking PDFs saved in Files can be imported too. Add ticket screenshots from a place's card.</div></div>` : '') +
+    (canEdit() ? `<div class="sec"><span class="label">Add from websites</span><div class="acts"><button class="btn" type="button" data-paste>${icon('clip')}Paste from a site or email</button><button class="btn" type="button" data-pdf>${icon('doc')}Import a booking PDF</button><button class="btn" type="button" data-gmimport>${icon('download')}Import a Google Maps list</button><a class="btn" href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener">${icon('link')}Set up the Add to Tabi button</a></div><div class="fine">On a booking or ticket page in Safari or Brave, tap your Add to Tabi bookmark, then come back here and paste. Booking PDFs saved in Files can be imported too. A Saved or shared Google Maps list comes in as maybes. Add ticket screenshots from a place's card.</div></div>` : '') +
     (PWA ? `<div class="sec"><span class="label">This phone</span><div class="acts"><button class="btn" type="button" data-act="share">${icon('share')}Share trip file</button><label class="btn">${icon('upload')}Import trip file<input type="file" class="tripImport" accept=".json,application/json" hidden></label><button class="btn" type="button" data-act="settings">${icon('settings')}Trip settings</button></div><div class="fine">Each phone keeps its own copy. To sync, share your trip file and import it on the other phone. The newest change wins.</div></div>` : '');
 }
 
@@ -1822,7 +1857,7 @@ function renderCard() {
   const hasWallet = p.conf || p.checkin || p.checkout || p.address || p.addressJa || p.phone;
   const tix = ticketsOf(p), pics = picsOf(p), canTix = editable && p.kind !== 'note';
   const tixRow = tix.length || (hasWallet && canTix) ? `<div class="tix">${tix.map((f, j) => { const src = photoSrc(f); return `<button type="button" data-tix="${j}" aria-label="Show ticket ${j + 1}">${src ? `<img src="${esc(src)}" alt="">` : ''}</button>`; }).join('')}${canTix ? `<button class="tadd" type="button" id="addTicket">${icon('ticket')}<span>Add ticket</span></button>` : ''}</div>` : '';
-  const wallet = hasWallet || tix.length ? `<div class="wallet"><div class="wh"><span class="label">${hasWallet ? 'Booking' : 'Tickets'}</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${tix.length ? `<button class="btn btn-sm" type="button" data-tix="0">${icon('ticket')}Show ticket</button>` : ''}${p.addressJa || p.address ? `<button class="btn btn-sm" type="button" id="driverBtn">${icon('car')}Show to driver</button>` : ''}</span></div><div class="wb">${hasWallet ? `<dl class="kv">
+  const wallet = hasWallet || tix.length ? `<div class="wallet"><div class="wh"><span class="label">${!hasWallet ? 'Tickets' : p.conf || p.checkin || p.checkout ? 'Booking' : 'Details'}</span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${tix.length ? `<button class="btn btn-sm" type="button" data-tix="0">${icon('ticket')}Show ticket</button>` : ''}${p.addressJa || p.address ? `<button class="btn btn-sm" type="button" id="driverBtn">${icon('car')}Show to driver</button>` : ''}</span></div><div class="wb">${hasWallet ? `<dl class="kv">
       ${p.conf ? `<dt>Ref</dt><dd>${copy(p.conf, 'booking reference')}</dd>` : ''}${p.checkin ? `<dt>Check-in</dt><dd>from ${fmtTime(p.checkin)}</dd>` : ''}${p.checkout ? `<dt>Check-out</dt><dd>by ${fmtTime(p.checkout)}</dd>` : ''}
       ${p.address ? `<dt>Address</dt><dd>${copy(p.address, 'address')}</dd>` : ''}${p.addressJa ? `<dt>${esc(ADDR_LBL())}</dt><dd class="ja" lang="${esc(COUNTRY().lang)}">${copy(p.addressJa, (LANG() || 'local') + ' address')}</dd>` : ''}${p.phone ? `<dt>Phone</dt><dd>${copy(p.phone, 'phone number')}</dd>` : ''}</dl>` : ''}${tixRow}</div></div>` : '';
   const photos = pics.map((f, j) => { const src = photoSrc(f); return src ? `<button class="ph" type="button" data-ph="${j}" aria-label="Open photo ${j + 1}"><img src="${esc(src)}" alt="" loading="lazy" decoding="async"></button>` : ''; }).join('');
@@ -1852,6 +1887,7 @@ function renderCard() {
     <div class="acts">
       <button class="btn btn-sm love ${iLike ? 'on' : ''}" type="button" id="loveBtn" ${editable ? '' : 'disabled'} aria-pressed="${iLike}">${icon('heart')}${iLike ? 'Loved' : 'Love it'}${likers.length ? `<span class="likers">${likers.slice(0, 3).map(id => `<img src="${esc(who(id).avatarUrl)}" alt="${esc(firstName(id))}">`).join('')}</span>` : ''}</button>
       ${editable && p.kind !== 'note' ? `<button class="btn btn-sm ${p.visited ? 'on' : ''}" type="button" id="stampBtn">${icon('stamp')}${p.visited ? BOOK().done : "We've been here"}</button>` : ''}
+      ${editable && p.status === 'maybe' && p.kind !== 'note' && today() >= TRIP.start && today() <= TRIP.end ? `<button class="btn btn-sm" type="button" id="todayBtn">${icon('today')}Plan it for today</button>` : ''}
       ${hasLoc(p) ? `<a class="btn btn-sm" href="${esc(gmaps(p))}" target="_blank" rel="noopener">${icon('map')}Google Maps</a>` : ''}
       ${canTix && !hasWallet && !tix.length ? `<button class="btn btn-sm" type="button" id="addTicket">${icon('ticket')}Add ticket</button>` : ''}
       ${p.links.map(l => `<a class="btn btn-sm" href="${esc(l.url)}" target="_blank" rel="noopener">${icon('link')}${esc(l.label)}</a>`).join('')}
@@ -1878,6 +1914,7 @@ $('#card').addEventListener('click', async e => {
   const ph = t.closest('[data-ph]'); if (ph) { openLightbox(p.id, +ph.dataset.ph); return; }
   if (t.closest('#loveBtn')) { const me = S.meId || 'local'; const on = !p.likes[me]; await patch('places', p.id, { likes: { [me]: on } }, on ? 'loved' : 'edited'); return; }
   if (t.closest('#stampBtn')) { if (p.visited) { await patch('places', p.id, { visited: '' }, BOOK_VERB()[1]); return; } justStamped = p.id; await patch('places', p.id, { visited: today() }, BOOK_VERB()[0]); return; }
+  if (t.closest('#todayBtn')) { if (await patch('places', p.id, { status: 'planned', start: today() }, 'planned')) toast(`${p.name} is on today's plan`); return; }
   if (t.closest('#ideasBtn')) { askIdeas(p); return; }
   const ai = t.closest('[data-addidea]'); if (ai) { addIdea(+ai.dataset.addidea); return; }
 });
@@ -1923,7 +1960,7 @@ const radio = (name, v) => $$(`#dlg input[name="${name}"]`).forEach(r => r.check
 const radioVal = name => ($(`#dlg input[name="${name}"]:checked`) || {}).value;
 function syncKind() {
   const k = radioVal('kind'), stay = k === 'stay';
-  $('#endWrap').style.visibility = stay ? 'visible' : 'hidden';
+  $('#endWrap').hidden = !stay;
   $('#startLbl').textContent = stay ? 'Check-in date' : 'Date';
   $('#timeLbl').textContent = stay ? 'Arrive around' : k === 'move' ? 'Leave at' : 'Time';
   $('#priceLbl').textContent = stay ? 'Price a night for both' : 'Cost for both';
@@ -2011,7 +2048,7 @@ F.form.addEventListener('submit', async e => {
   e.preventDefault();
   const d = readForm();
   if (!d.name && d.kind !== 'note') { F.name.focus(); toast('Give it a name first.'); return; }
-  if (F.cur.value === 'aud' && parseAmt(F.price.value) > 0 && !S.settings.rate) { F.price.focus(); toast(`Set the exchange rate in Money first, or enter the price in ${CL().name.toLowerCase()}.`); return; }
+  if (F.cur.value === 'aud' && parseAmt(F.price.value) > 0 && !S.settings.rate) { F.price.focus(); toast(`Set the exchange rate on the Spend tab first, or enter the price in ${CL().name.toLowerCase()}.`); return; }
   if (d.kind === 'note' && !d.name && !d.notes) { F.notes.focus(); toast('Write the note first.'); return; }
   const pl = parseLinks(d.linksRaw); if (pl.bad.length) { $('#fMore').open = true; F.links.focus(); toast('Each link needs to start with https://'); return; }
   if (d.kind === 'stay' && d.start && d.end && d.end <= d.start) { F.end.focus(); toast('Check-out needs to be after check-in.'); return; }
@@ -2350,7 +2387,9 @@ function cleanCapture(c) {
   const pv = +c.price; o.price = isFinite(pv) && pv > 0 && pv < 1e8 ? pv : null; o.cur = curSlot(c.cur); o.total = c.total === true;
   if (o.price && o.cur === 'other') { o.priceOther = `${String(c.cur).toUpperCase().slice(0, 3)} ${o.price.toLocaleString('en-AU')}${o.total ? ' total' : ''}`; o.price = null; }
   o.conf = s(c.conf, 60); o.address = s(c.address, 200); o.addressJa = s(c.addressJa, 200); o.phone = s(c.phone, 40);
-  const la = +c.lat, ln = +c.lng; if (isFinite(la) && isFinite(ln) && Math.abs(la) <= 85 && Math.abs(ln) <= 180 && (la || ln)) { o.lat = +la.toFixed(5); o.lng = +ln.toFixed(5); }
+  // a location the Add to Tabi button found outside Japan counts only if it's in the trip's country
+  if (c.lat == null && Array.isArray(c.geos)) { const g = c.geos.find(g => Array.isArray(g) && isFinite(g[0]) && isFinite(g[1]) && inTripCountry(+g[0], +g[1])); if (g) c = { ...c, lat: +g[0], lng: +g[1] }; }
+  const la = +c.lat, ln = +c.lng; if (c.lat != null && isFinite(la) && isFinite(ln) && Math.abs(la) <= 85 && Math.abs(ln) <= 180 && (la || ln)) { o.lat = +la.toFixed(5); o.lng = +ln.toFixed(5); }
   o.url = safeUrl(s(c.url, 600)); o.site = s(c.site, 40); o.room = s(c.room, 80); o.breakfast = c.breakfast === true;
   // "APB 高円寺" becomes APB Koenji when Tabi knows the Japanese place name; the Japanese stays as the sign
   if (o.name && TP.JP.test(o.name)) {
@@ -2433,7 +2472,11 @@ function guessPin(c) {
   }
   return null;
 }
-function usePaste(text) { $('#fPasteBox').hidden = true; if (!draft) return; const r = readCapture(text); applyCapture(r.c, r.from); }
+function usePaste(text) {
+  $('#fPasteBox').hidden = true; if (!draft) return;
+  // a whole Google Maps list goes to its own import, as maybes
+  const ls = readListSource(text); if (ls) { closeDialog(); openListImport(ls); return; }
+  const r = readCapture(text); applyCapture(r.c, r.from); }
 async function pasteFromSite() {
   let text = '';
   try { if (navigator.clipboard && navigator.clipboard.readText) text = await navigator.clipboard.readText(); } catch (e) {}
@@ -2468,7 +2511,7 @@ function addFromPdf() { openDialog({ kind: 'see', status: 'planned', start: '' }
 async function askIdeas(p) {
   if (!sample) return;
   S.ideas = { for: p.id, loading: true, items: [] }; renderCard();
-  const month = p.start ? parseD(p.start).toLocaleDateString('en-AU', { month: 'long' }) : 'early November';
+  const month = parseD(p.start || (today() >= TRIP.start && today() <= TRIP.end ? today() : TRIP.start)).toLocaleDateString('en-AU', { month: 'long' });
   const prompt = `Two adults are travelling in ${COUNTRY().name} in ${month}. They love drawing and knitting somewhere calm and scenic, craft and art, long walks, local food and quiet bars.
 Suggest 5 real places within about 8 km of "${p.name}"${p.ja ? ` (${p.ja})` : ''} at latitude ${p.lat.toFixed(4)}, longitude ${p.lng.toFixed(4)}. Only include places you are confident exist and are open to visitors. Mix the kinds. Do not include "${p.name}" itself.
 Reply with JSON only: {"ideas":[{"name":"English name","ja":"${LANG() ? LANG() + ' name' : ''}","kind":"see|food|craft|walk","lat":0,"lng":0,"why":"one short sentence on why it suits them"}]}`;
@@ -2571,7 +2614,7 @@ function goToPeer(pe, dur) {
 /* ---------- menu ---------- */
 function renderMenu() {
   $('#menu').innerHTML = (PWA ? `<button type="button" data-m="share">${icon('share')}<span>Share trip file</span></button><label>${icon('upload')}<span>Import a trip file</span><input type="file" class="tripImport" accept=".json,application/json" hidden></label><button type="button" data-m="settings">${icon('settings')}<span>Trip settings</span></button>` : `<label>${icon('upload')}<span>Import the old map's export</span><input type="file" id="importOld" accept=".json,application/json" hidden></label>`)
-    + (canEdit() ? `<button type="button" data-m="paste">${icon('clip')}<span>Add from a site or email</span></button><button type="button" data-m="pdf">${icon('doc')}<span>Import a booking PDF</span></button>` : '') + `<a href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener" class="mlink">${icon('link')}<span>Set up the Add to Tabi button</span></a>`
+    + (canEdit() ? `<button type="button" data-m="paste">${icon('clip')}<span>Add from a site or email</span></button><button type="button" data-m="pdf">${icon('doc')}<span>Import a booking PDF</span></button><button type="button" data-m="gm">${icon('download')}<span>Import a Google Maps list</span></button>` : '') + `<a href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener" class="mlink">${icon('link')}<span>Set up the Add to Tabi button</span></a>`
     + `${TRIP_COUNTRY() === 'JP' ? `<button type="button" data-m="rail">${icon('train')}<span>${railOn ? 'Hide' : 'Show'} Shinkansen lines</span></button>` : ''}<button type="button" data-m="fit">${icon('fit')}<span>Show all of ${esc(COUNTRY().name)}</span></button><button type="button" data-m="detail">${icon('map')}<span>${glOn ? 'Use the simple map' : 'Use the detailed street map'}</span></button>${PWA && glOn ? `<button type="button" data-m="offline">${icon('download')}<span>Save maps for offline</span></button>` : ''}`
     + `<div class="note">Map data: MLIT National Land Numerical Information, Natural Earth and GeoNames.</div>` + (PWA ? `<div class="note">Each phone keeps its own copy and works offline. To sync, share your trip file and import it on the other phone. The newest change wins.</div>` : '');
 }
@@ -2587,6 +2630,7 @@ $('#menu').addEventListener('click', e => {
   if (m === 'share' && PWA) exportTrip();
   if (m === 'paste') addFromSite();
   if (m === 'pdf') addFromPdf();
+  if (m === 'gm') openListImport(null);
   if (m === 'settings' && PWA) openSettings(false);
 });
 $('#menu').addEventListener('change', e => {
@@ -2618,6 +2662,249 @@ function renderAll(skipProfiles) {
 }
 uiReady = true; onCountry();
 
+/* ---------- Google Maps lists: a Saved list, or a list somebody shared, comes in as maybes ----------
+   Three ways in: the Add to Tabi button on the list's page (it copies every place), a file from Google Takeout
+   (a list's .csv, or Saved Places.json), or a My Maps .kml. Each place becomes a maybe, pinned on the map. */
+const JP_WIDE = [122, 20, 154, 46.5]; // Okinawa to Hokkaido, as the Add to Tabi button has always judged Japan
+function inTripCountry(lat, lng) {
+  const c = COUNTRY().bbox, b = TRIP_COUNTRY() === 'JP' ? JP_WIDE : [c[0] - 1.5, c[1] - 1.5, c[2] + 1.5, c[3] + 1.5];
+  return lng >= b[0] && lng <= b[2] && lat >= b[1] && lat <= b[3];
+}
+const km = (a, b) => { const c = Math.cos((a.lat + b.lat) / 2 * Math.PI / 180); return Math.hypot(a.lat - b.lat, (a.lng - b.lng) * c) * 111.2; };
+const distText = d => d < 1 ? `${Math.max(10, Math.round(d * 100) * 10)} m` : `${d < 10 ? d.toFixed(1) : Math.round(d)} km`;
+// what kind of place a name suggests; anything unrecognised is a sight
+const KIND_GUESS = [
+  ['food', /\b(bar|pub|izakaya|caf[eé]|coffee|kissa|bakery|ramen|sushi|soba|udon|yakitori|yakiniku|tonkatsu|tempura|curry|burgers?|pizza|pizzeria|restaurant|diner|bistro|brasserie|trattoria|osteria|taverna|kitchen|grill|eatery|noodles?|tea ?house|tea ?room|brewery|brewing|taproom|wine|sake|whisk(?:e)?y|cocktails?|gelat\w+|patisserie|donuts?|doughnuts?|market)\b|居酒屋|食堂|喫茶|珈琲|ラーメン|寿司|鮨|そば|蕎麦|うどん|焼肉|焼鳥|酒場|バー|カフェ|レストラン|식당|카페|餐廳|咖啡/i],
+  ['stay', /\b(hotel|hostel|ryokan|guest ?house|minshuku|lodge)\b|旅館|ホテル|民宿/i],
+  ['craft', /\b(museum|gallery|art|arts|craft|crafts|ceramics?|pottery|studio|yarn|wool|fabric|textiles?|book ?(?:store|shop)|books|records?|vintage|antiques?|stationery|atelier)\b|美術館|博物館|ギャラリー|工房|手芸|毛糸|古着/i],
+  ['walk', /\b(park|gardens?|trail|hike|hiking|mt\.?|mount|mountain|gorge|falls|waterfall|beach|lake|forest|walk|path|lookout|viewpoint|observatory)\b|公園|庭園|渓谷|の滝|展望/i]
+];
+const guessKind = t => { for (const [k, re] of KIND_GUESS) if (re.test(t)) return k; return 'see'; };
+// a small reader for comma-separated files, with quoted cells
+function csvRows(text) {
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); cell = ''; rows.push(row); row = []; }
+    else cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+const cleanStr = (v, n) => typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) : '';
+function listPlace(o) {
+  const p = { n: cleanStr(o.n, 80), ja: cleanStr(o.ja, 40), a: cleanStr(o.a, 200), aj: cleanStr(o.aj, 200), note: cleanStr(o.note, 300), url: safeUrl(cleanStr(o.url, 600)) };
+  const la = +o.lat, ln = +o.lng; if (o.lat != null && o.lng != null && isFinite(la) && isFinite(ln) && Math.abs(la) <= 85 && Math.abs(ln) <= 180 && (la || ln)) { p.lat = +la.toFixed(6); p.lng = +ln.toFixed(6); }
+  if (!p.url && /^\d{1,20}$/.test(String(o.cid || ''))) p.url = 'https://www.google.com/maps?cid=' + o.cid;
+  // a Japanese address from Google reads better to a driver in its own field
+  if (p.a && !p.aj && TP.JP.test(p.a)) { p.aj = p.a; p.a = ''; }
+  return p.n ? p : null;
+}
+const gmUrlCoords = u => { let s = String(u || ''); try { s = decodeURIComponent(s); } catch (e) {} const m = /\/maps\/search\/(-?\d+\.\d+),\s*(-?\d+\.\d+)/.exec(s); return m ? { lat: +m[1], lng: +m[2] } : TP.coords(s); };
+// what a pasted text or a chosen file holds: { list, places } or null
+function readListSource(text, fname) {
+  const t = String(text || '').replace(/^﻿/, '').trim(); if (!t) return null;
+  const done = (list, raw) => { const places = raw.map(listPlace).filter(Boolean).slice(0, 600); return places.length ? { list: cleanStr(list, 60) || 'Google Maps list', places } : null; };
+  const base = String(fname || '').replace(/\.[a-z]+$/i, '');
+  const rec = TP.decode(t);
+  if (rec && Array.isArray(rec.places)) return done(rec.list, rec.places.filter(p => p && typeof p === 'object'));
+  if (rec) return null;
+  if (/^\)\]\}'/.test(t) || /^\[\[\[/.test(t)) { try { const r = TP.gmList(JSON.parse(t.replace(/^\)\]\}'\s*/, ''))); return done(r.list, r.places); } catch (e) { return null; } }
+  if (t[0] === '{') {
+    try {
+      const j = JSON.parse(t); if (!Array.isArray(j.features)) return null;
+      return done(base || 'Saved places', j.features.map(f => { const pr = (f && f.properties) || {}, lo = pr.location || pr.Location || {}, c = (f && f.geometry && f.geometry.coordinates) || [];
+        return { n: lo.name || lo['Business Name'] || pr.Title || pr.name || lo.address || '', lat: c[1], lng: c[0], a: lo.address || lo.Address || '', note: pr.Comment || '', url: pr.google_maps_url || pr['Google Maps URL'] || '' }; }));
+    } catch (e) { return null; }
+  }
+  if (/<Placemark[\s>]/i.test(t)) {
+    const tag = (s, n) => { const m = new RegExp(`<${n}[^>]*>([\\s\\S]*?)</${n}>`, 'i').exec(s); return m ? m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim() : ''; };
+    const doc = /<Document[^>]*>\s*<name>([\s\S]*?)<\/name>/i.exec(t);
+    return done(doc ? doc[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1') : base, (t.match(/<Placemark[\s>][\s\S]*?<\/Placemark>/gi) || []).map(pm => { const c = tag(pm, 'coordinates').split(/[\s,]+/).map(Number); return { n: tag(pm, 'name'), lat: c[1], lng: c[0], note: tag(pm, 'description') }; }));
+  }
+  const rows = csvRows(t), hi = rows.findIndex(r => r.some(c => /^title$/i.test(c.trim())) && r.some(c => /^url$/i.test(c.trim())));
+  if (hi >= 0) {
+    const H = rows[hi].map(c => c.trim().toLowerCase()), col = n => H.indexOf(n);
+    return done(base, rows.slice(hi + 1).filter(r => (r[col('title')] || '').trim() || (r[col('url')] || '').trim()).map(r => { const url = (r[col('url')] || '').trim(), c = gmUrlCoords(url) || {}, nm = /\/maps\/place\/([^/@?]+)/.exec(url);
+      let n = (r[col('title')] || '').trim(); if (!n && nm) { try { n = decodeURIComponent(nm[1].replace(/\+/g, ' ')); } catch (e) {} }
+      return { n: n || (c.lat != null ? 'Pinned place' : ''), lat: c.lat, lng: c.lng, note: [r[col('note')], r[col('comment')]].filter(x => x && x.trim()).join(' '), url }; }));
+  }
+  // several Google Maps links, one on each line
+  const lines = t.split(/\n+/).map(l => l.trim()).filter(Boolean), GM_URL = /https?:\/\/(?:www\.|maps\.)?google\.[a-z.]+\/maps\S*/i;
+  if (lines.length >= 2 && lines.every(l => GM_URL.test(l))) return done('Google Maps links', lines.map(l => { const u = GM_URL.exec(l)[0], r = TP.fromUrl(u); return { n: r.name || r.ja || '', lat: r.lat, lng: r.lng, url: u }; }));
+  return null;
+}
+async function putMany(recs, what) {
+  if (S.mode === 'local') { for (const [id, d] of recs) { local.places[id] = { ...d, ...lastStamp(what) }; delete local.deleted[id]; } saveLocal(); applyLocal(); return recs.length; }
+  let n = 0; for (const [id, d] of recs) if (await put('places', id, d, what)) n++;
+  return n;
+}
+let GM = null;
+function closeListImport() { const s = $('#gmScrim'); if (s) s.remove(); GM = null; }
+function openListImport(src) {
+  if (!canEdit()) { toast('Changes are turned off for you here.'); return; }
+  closeListImport(); toggleMenu(false);
+  const el = document.createElement('div'); el.className = 'scrim'; el.id = 'gmScrim'; document.body.appendChild(el);
+  el.addEventListener('click', e => {
+    const t = e.target;
+    if (t === el || t.closest('[data-gx]')) { closeListImport(); return; }
+    if (t.closest('#gmPaste')) { listFromClipboard(); return; }
+    if (t.closest('#gmAll')) { const on = GM.items.some(i => !i.on && !i.dupe); GM.items.forEach(i => { if (!i.dupe) i.on = on; }); drawListReview(); return; }
+    if (t.closest('#gmGo')) runListImport();
+  });
+  el.addEventListener('change', e => {
+    const t = e.target;
+    if (t.classList.contains('gmFile')) { const f = t.files && t.files[0]; t.value = ''; if (f) f.text().then(x => takeList(x, f.name)).catch(() => listMiss()); return; }
+    if (t.dataset.gi != null && GM) { GM.items[+t.dataset.gi].on = t.checked; listCount(); }
+  });
+  el.addEventListener('paste', e => { if (e.target.id !== 'gmBox') return; const v = e.clipboardData && e.clipboardData.getData('text'); if (v && v.trim()) { e.preventDefault(); takeList(v, ''); } });
+  el.addEventListener('input', e => { if (e.target.id === 'gmBox' && e.target.value.trim().length > 20) { clearTimeout(pasteT); const v = e.target.value; pasteT = setTimeout(() => takeList(v, ''), 700); } });
+  if (src) setListSource(src); else drawListIntro();
+}
+function drawListIntro(miss) {
+  const el = $('#gmScrim'); if (!el) return;
+  el.innerHTML = `<div class="dlg" role="dialog" aria-label="Import from Google Maps"><div class="dlg-h"><h2>Import from Google Maps</h2><button class="iconbtn" type="button" data-gx aria-label="Close">${icon('x')}</button></div>
+    <div class="dlg-b"><p class="gm-p">Bring in one of your <b>Saved</b> lists, or a list somebody shared with you. Every place is added as a maybe and pinned on the map, ready to plan.</p>
+      <ol class="gm-steps"><li>In Google Maps, open the list, tap <b>Share</b> and copy its link.</li><li>Paste the link into <b>Safari's address bar</b>, so the list opens in Safari and not in the Google Maps app.</li><li>Tap your <b>Add to Tabi</b> bookmark, then <b>Copy for Tabi</b>.</li><li>Come back here and tap <b>Paste the list</b>.</li></ol>
+      <div class="acts"><button class="btn btn-primary" type="button" id="gmPaste">${icon('clip')}Paste the list</button><label class="btn">${icon('upload')}Choose a file<input type="file" class="gmFile" accept=".csv,.json,.kml,text/csv,application/json,application/vnd.google-earth.kml+xml" hidden></label></div>
+      <textarea class="input" id="gmBox" rows="3" ${miss === 'box' ? '' : 'hidden'} aria-label="Paste the list here" placeholder="Tap and hold here, then tap Paste."></textarea>
+      <div class="pastenote miss" role="status" ${miss && miss !== 'box' ? '' : 'hidden'}>${miss && miss !== 'box' ? esc(miss) : ''}</div>
+      <div class="fine">A file works too: a list's .csv or Saved Places.json from Google Takeout, or a .kml from My Maps. Lists copied with an Add to Tabi bookmark saved before this update won't work, so <a href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener">set the button up again</a> first.</div></div>
+    <div class="dlg-f"><button class="btn" type="button" data-gx>Close</button></div></div>`;
+  if (miss === 'box') $('#gmBox').focus();
+}
+function listMiss() { drawListIntro("That doesn't look like a Google Maps list. Use the Add to Tabi button on the list's page, or choose a file from Google Takeout."); }
+function takeList(text, fname) { const src = readListSource(text, fname); if (src) setListSource(src); else listMiss(); }
+async function listFromClipboard() {
+  let text = '';
+  try { if (navigator.clipboard && navigator.clipboard.readText) text = await navigator.clipboard.readText(); } catch (e) {}
+  if (!$('#gmScrim')) return;
+  if (text && text.trim()) takeList(text, ''); else drawListIntro('box');
+}
+const sameName = (a, b) => { const x = fold(a), y = fold(b); return !!x && x === y; };
+function setListSource(src) {
+  const have = [...S.places.values()].filter(p => p.kind !== 'note'), seen = [];
+  const items = src.places.map(p => {
+    const loc = p.lat != null, twin = o => (p.url && o.url && p.url === o.url) || (sameName(p.n, o.n) && (!loc || o.lat == null || km(p, o) < 0.4));
+    const dupe = have.some(o => (p.url && o.links.some(l => l.url === p.url)) || (sameName(p.n, o.name) && (!loc || !hasLoc(o) || km(p, o) < 0.4))) || seen.some(twin);
+    seen.push(p);
+    const out = loc && !inTripCountry(p.lat, p.lng);
+    return { ...p, kind: guessKind(p.n + ' ' + p.ja), dupe, out, on: !dupe && !out };
+  });
+  GM = { list: src.list, items }; drawListReview();
+}
+function listCount() {
+  const n = GM.items.filter(i => i.on).length, b = $('#gmGo'); if (!b) return;
+  b.disabled = !n; b.textContent = n ? `Add ${n} as maybe${n === 1 ? '' : 's'}` : 'Nothing ticked';
+  const a = $('#gmAll'); if (a) a.textContent = GM.items.some(i => !i.on && !i.dupe) ? 'Tick all' : 'Untick all';
+}
+function drawListReview() {
+  const el = $('#gmScrim'); if (!el || !GM) return;
+  const it = GM.items, dupes = it.filter(i => i.dupe).length, outs = it.filter(i => i.out && !i.dupe).length, noloc = it.filter(i => i.lat == null && !i.dupe).length;
+  const bits = [dupes ? `${dupes} ${dupes === 1 ? 'is' : 'are'} already in Tabi` : '', outs ? `${outs} ${outs === 1 ? 'is' : 'are'} outside ${COUNTRY().name}, so ${outs === 1 ? "it's" : "they're"} left unticked` : '', noloc ? `${noloc} ${noloc === 1 ? 'has' : 'have'} no map location yet, so Tabi will look ${noloc === 1 ? 'it' : 'them'} up` : ''].filter(Boolean);
+  const keep = el.querySelector('.gm-list') ? el.querySelector('.gm-list').scrollTop : 0;
+  el.innerHTML = `<div class="dlg" role="dialog" aria-label="Import from Google Maps"><div class="dlg-h"><h2>${esc(GM.list)}</h2><button class="iconbtn" type="button" data-gx aria-label="Close">${icon('x')}</button></div>
+    <div class="dlg-b"><div class="sec-h"><span class="label">${it.length} place${it.length === 1 ? '' : 's'} from Google Maps</span><button class="btn btn-sm btn-ghost" type="button" id="gmAll"></button></div>
+      ${bits.length ? `<p class="gm-p">${esc(bits.join('. '))}.</p>` : ''}
+      <div class="gm-list">${it.map((p, i) => `<label class="gm-row ${p.dupe ? 'dupe' : ''}"><input type="checkbox" data-gi="${i}" ${p.on ? 'checked' : ''} ${p.dupe ? 'disabled' : ''}>${glyph(p.kind, { status: 'maybe' })}<span><b>${esc(p.n)}</b>${p.ja ? `<span class="ja">${esc(p.ja)}</span>` : ''}<small>${esc([KINDS[p.kind].label, p.dupe ? 'Already in Tabi' : p.out ? 'Outside ' + COUNTRY().name : p.lat == null ? 'No map location yet' : '', p.note || p.a || p.aj].filter(Boolean).join(' · '))}</small></span></label>`).join('')}</div></div>
+    <div class="dlg-f"><button class="btn btn-primary" type="button" id="gmGo"></button><button class="btn" type="button" data-gx>Cancel</button></div></div>`;
+  el.querySelector('.gm-list').scrollTop = keep; listCount();
+}
+async function runListImport() {
+  if (!GM || GM.busy) return;
+  const picks = GM.items.filter(i => i.on), btn = $('#gmGo'); if (!picks.length) return;
+  GM.busy = true; btn.disabled = true;
+  const need = picks.filter(i => i.lat == null && i.n.length >= 3);
+  if (need.length && navigator.onLine !== false) {
+    let k = 0;
+    for (const it of need) {
+      btn.textContent = `Finding places: ${++k} of ${need.length}`;
+      const h = (await searchOnline(it.n))[0]; if (!GM) return;
+      if (h) { it.lat = +h.lat.toFixed(6); it.lng = +h.lng.toFixed(6); if (!it.ja && h.ja) it.ja = h.ja.slice(0, 40); }
+    }
+  }
+  btn.textContent = 'Adding…';
+  const list = GM.list, now = Date.now();
+  const recs = picks.map((it, i) => [newId(), { name: it.n, ja: it.ja, kind: it.kind, status: 'maybe', start: '', end: '', time: '', price: null, priceNote: '',
+    lat: it.lat != null ? it.lat : null, lng: it.lng != null ? it.lng : null, address: it.a, addressJa: it.aj, links: it.url ? [{ label: 'Google Maps', url: it.url }] : [],
+    notes: (it.note ? it.note + '\n' : '') + `From the Google Maps list ${list}.`, by: S.meId || 'local', created: now + i, likes: {}, photos: {} }]);
+  const ids = recs.map(r => r[0]), n = await putMany(recs, 'imported');
+  closeListImport();
+  if (!n) return;
+  const lost = picks.filter(i => i.lat == null).length;
+  go('notes'); toast(`${n} place${n === 1 ? '' : 's'} added as maybe${n === 1 ? '' : 's'}${lost ? `. ${lost} still need${lost === 1 ? 's' : ''} a spot on the map` : ''}`);
+  const pts = ids.map(id => S.places.get(id)).filter(p => p && hasLoc(p)); if (pts.length) zoomTo(fitTransform(pts, { maxK: 12 }), 0);
+  const hd = $('#maybesHead'); if (hd) hd.scrollIntoView({ block: 'start' });
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#gmScrim')) { e.stopPropagation(); closeListImport(); } }, true);
+
+/* ---------- maybes by area: the city they're in (Japan), or the stay they're near ---------- */
+function areaOf(p) {
+  if (!hasLoc(p)) return 'Not on the map yet';
+  if (TRIP_COUNTRY() === 'JP') {
+    let best = null, bd = 25;
+    for (const [n, , lat, lng] of CITIES) { const d = km(p, { lat, lng }); if (d < bd) { bd = d; best = n; } }
+    if (best) return best;
+  }
+  let near = null, nd = 30;
+  for (const s of S.places.values()) { if (s.kind !== 'stay' || s.status === 'maybe' || !hasLoc(s)) continue; const d = km(p, s); if (d < nd) { nd = d; near = s; } }
+  if (near) return 'Near ' + near.name.split(/[,(]/)[0].trim();
+  if (TRIP_COUNTRY() === 'JP') { const n = nearestPlaceName(p.lat, p.lng); if (n) return n; }
+  return 'Elsewhere';
+}
+function maybeGroups(list) {
+  const m = new Map(); for (const p of list) { const a = areaOf(p); if (!m.has(a)) m.set(a, []); m.get(a).push(p); }
+  const last = a => a === 'Not on the map yet' ? 2 : a === 'Elsewhere' ? 1 : 0, here = hereNow();
+  const dist = l => here ? Math.min(...l.filter(hasLoc).map(p => km(here, p)), 1e9) : 0;
+  const out = [...m.entries()].sort((a, b) => last(a[0]) - last(b[0]) || dist(a[1]) - dist(b[1]) || b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  if (here) for (const [, l] of out) l.sort((a, b) => (hasLoc(a) ? km(here, a) : 1e9) - (hasLoc(b) ? km(here, b) : 1e9));
+  return out;
+}
+
+/* ---------- where you are: a dot on the map, and what's near you. Your location stays on this device. ---------- */
+let hereWatch = null;
+const hereNow = () => S.here && Date.now() - S.here.at < 20 * 60e3 ? S.here : null;
+function drawHere() {
+  if (!S.here) { if (hereEl) { hereEl.remove(); hereEl = null; } return; }
+  if (!hereEl) { hereEl = document.createElement('div'); hereEl.className = 'here'; hereEl.innerHTML = '<i></i>'; hereEl.setAttribute('aria-label', 'You are here'); pinsEl.appendChild(hereEl); }
+  hereEl._ll = [S.here.lng, S.here.lat]; positionAll();
+}
+function flyHere() { if (!S.here) return; if (isPhone() && S.view !== 'map') setView('map'); flyToPlace(S.here, 700); }
+function startLocate(fly) {
+  if (!navigator.geolocation) { toast("This device can't share its location."); return; }
+  if (S.here && fly) flyHere();
+  if (hereWatch != null) return;
+  let first = true; $('#zloc').classList.add('busy');
+  hereWatch = navigator.geolocation.watchPosition(pos => {
+    const was = S.here; S.here = { lat: pos.coords.latitude, lng: pos.coords.longitude, at: Date.now() };
+    $('#zloc').classList.remove('busy'); $('#zloc').classList.add('on'); drawHere();
+    if (first) { first = false; pref('here', 'on'); if (fly) flyHere(); if (S.tab === 'today') renderPanel(); }
+    else if (S.tab === 'today' && (!was || km(was, S.here) > 0.15)) renderPanel();
+  }, err => {
+    navigator.geolocation.clearWatch(hereWatch); hereWatch = null; $('#zloc').classList.remove('busy', 'on');
+    if (err && err.code === 1) pref('here', 'off');
+    if (fly || !first) toast(err && err.code === 1 ? (PWA ? 'Location is turned off for Tabi. Allow it in your phone settings, then try again.' : "Location isn't available here.") : "Couldn't find where you are. Try again in a moment.");
+  }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 25000 });
+}
+$('#zloc').onclick = () => startLocate(true);
+// carry on showing the dot next time, but only where permission was already given, so nothing pops up on opening
+function resumeLocate() { if (pref('here') !== 'on' || !navigator.permissions || !navigator.permissions.query) return; navigator.permissions.query({ name: 'geolocation' }).then(r => { if (r.state === 'granted') startLocate(false); }).catch(() => {}); }
+function nearHTML() {
+  const pts = [...S.places.values()].filter(p => hasLoc(p) && p.kind !== 'note' && p.kind !== 'move' && p.kind !== 'stay' && !p.visited);
+  if (!pts.length) return '';
+  const here = hereNow();
+  if (!here) return `<div class="sec"><div class="sec-h"><span class="label">Near you</span><button class="btn btn-sm btn-ghost" type="button" data-near>${icon('locate')}Find what's near me</button></div><div class="muted" style="font-size:13px">See which of your places and maybes are closest to where you are right now.</div></div>`;
+  const list = pts.map(p => [km(here, p), p]).filter(x => x[0] <= 5).sort((a, b) => a[0] - b[0]).slice(0, 6);
+  return `<div class="sec"><div class="sec-h"><span class="label">Near you</span><button class="btn btn-sm btn-ghost" type="button" data-near>${icon('locate')}Show me</button></div>${list.length ? `<div class="timeline">${list.map(([d, p]) => `<button class="tl" type="button" data-id="${esc(p.id)}"><span class="tt">${distText(d)}</span>${glyph(p.kind, { status: p.status })}<span><span class="tn">${esc(p.name)}</span><span class="tm">${esc(KINDS[p.kind].label)} · ${esc(statusLabel(p))}${d <= 3 ? ` · ${Math.max(1, Math.round(d * 13))} min walk` : ''}</span></span></button>`).join('')}</div>` : '<div class="muted" style="font-size:13px">None of your places are within 5 km of here.</div>'}</div>`;
+}
+$('#pbody').addEventListener('click', e => {
+  if (e.target.closest('[data-near]')) { startLocate(true); return; }
+  if (e.target.closest('[data-gmimport]')) openListImport(null);
+});
+
 /* ---------- boot: offline phone app ---------- */
 addEventListener('resize', () => { renderNav(); if (!isPhone() && S.tab === 'more') { S.tab = 'today'; renderPanel(); } });
 const stampOf = raw => raw && raw.last && typeof raw.last.at === 'number' ? raw.last.at : (raw && raw.created) || 0;
@@ -2627,7 +2914,7 @@ async function exportTrip() {
   for (const p of S.places.values()) for (const f of p.photos) if (f.d && S.photos.get(f.d)) photos[f.d] = S.photos.get(f.d).data;
   const st = local.settings || {};
   const data = { format: 'tabi-trip', version: 1, exportedAt: Date.now(), from: st.me || '',
-    settings: { title: st.title, start: st.start, end: st.end, rate: st.rate, budget: st.budget, names: st.names, country: st.country || 'JP', home: st.home || 'AUD' }, places: local.places, spend: local.spend, deleted: local.deleted, photos };
+    settings: { title: st.title, start: st.start, end: st.end, rate: st.rate, budget: st.budget, names: st.names, country: st.country || 'JP', home: st.home || 'AUD', at: st.at || 0 }, places: local.places, spend: local.spend, deleted: local.deleted, photos };
   const name = `${(st.title || 'trip').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'trip'}-${today()}.json`;
   const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
   try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: st.title || 'Our trip' }); return; } }
@@ -2649,6 +2936,15 @@ async function importTrip(data) {
   if (!ls.names && Array.isArray(st.names)) ls.names = st.names.slice(0, 2).map(x => String(x || '').slice(0, 24));
   if (!ls.rate && typeof st.rate === 'number') ls.rate = st.rate;
   if (!ls.budget && typeof st.budget === 'number') ls.budget = st.budget;
+  // settings changed more recently on the other phone replace this phone's: dates, names, rate and budget
+  if (typeof st.at === 'number' && st.at > (ls.at || 0) && (st.country || 'JP') === (ls.country || 'JP')) {
+    if (isIso(st.start) && isIso(st.end) && st.end > st.start) { ls.start = st.start; ls.end = st.end; }
+    if (typeof st.title === 'string' && st.title.trim()) ls.title = st.title.slice(0, 60);
+    if (Array.isArray(st.names) && st.names.length === 2) ls.names = st.names.map(x => String(x || '').slice(0, 24));
+    if ((st.home || 'AUD') === (ls.home || 'AUD') && typeof st.rate === 'number' && st.rate > 0) ls.rate = st.rate;
+    if (typeof st.budget === 'number' && st.budget >= 0) ls.budget = st.budget;
+    ls.at = st.at;
+  }
   for (const [id, at] of Object.entries(data.deleted || {})) if (ID_OK(id) && typeof at === 'number') local.deleted[id] = Math.max(at, local.deleted[id] || 0);
   for (const [id, raw] of Object.entries(data.places || {})) {
     if (!ID_OK(id) || !raw || typeof raw !== 'object') continue;
@@ -2732,7 +3028,7 @@ function openSettings(first) {
     const rv = parseFloat(String(rate.value).replace(',', '.'));
     if (rate.value.trim() && !(rv > 0 && rv < 1e6)) { rate.focus(); toast('Enter the rate as a number, or leave it empty.'); return; }
     const me = $('#stMe').value.trim().slice(0, 24), country = has ? cc : cSel.value, c = COUNTRIES[country];
-    local.settings = { ...local.settings, me, country, home: hSel.value, rate: rv > 0 ? rv : 0, title: $('#stTitle').value.trim().slice(0, 60) || c.sample.title.replace(/\d{4}$/, s.slice(0, 4)), start: s, end: en, names: [$('#stN0').value.trim().slice(0, 24) || me || 'Me', $('#stN1').value.trim().slice(0, 24) || 'Partner'], seen: true };
+    local.settings = { ...local.settings, me, country, home: hSel.value, rate: rv > 0 ? rv : 0, title: $('#stTitle').value.trim().slice(0, 60) || c.sample.title.replace(/\d{4}$/, s.slice(0, 4)), start: s, end: en, names: [$('#stN0').value.trim().slice(0, 24) || me || 'Me', $('#stN1').value.trim().slice(0, 24) || 'Partner'], seen: true, at: Date.now() };
     S.meId = me ? 'n:' + me : 'local'; saveLocal(); applyLocal(); closeSettings(); scrollDaysToToday();
     if (!has) fitPlaces(0);
   });
@@ -2748,6 +3044,7 @@ async function boot() {
   if (S.places.size) fitPlaces(0);
   if (!local.settings.seen) openSettings(true);
   setTimeout(() => startGL(), 400);
+  resumeLocate();
 }
 boot();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
