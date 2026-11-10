@@ -1671,7 +1671,7 @@ function stampsHTML() {
   const total = [...S.places.values()].filter(p => p.kind !== 'note').length, bk = BOOK(), kind = COUNTRY().book;
   return viewHead(bk.title, `${v.length} of ${total} places`) + `<div class="sec">${v.length ? `<div class="stampbook ${kind}">${v.map(p => `<button class="stampcell" type="button" data-id="${esc(p.id)}">${stampSVG(p)}<span>${esc(fmtShort(p.visited))}</span></button>`).join('')}</div>`
     : `<div class="empty" style="padding:0"><b>No ${esc(bk.count)} yet</b>${esc(COUNTRY().bookNote)} Open a place and tap "We've been here" to add it to this book.</div>`}</div>
-    <div class="sec"><span class="label">Keep it</span><div class="acts"><button class="btn" type="button" data-keepsake>${icon('doc')}Make a keepsake PDF</button></div><div class="fine">A small book of the trip to save, print or send: the route map, your ${esc(bk.count)}, photos, each day and the trip in numbers. Made on this device.</div></div>`;
+    ${PWA ? `<div class="sec"><span class="label">Keep it</span><div class="acts"><button class="btn" type="button" data-keepsake>${icon('doc')}Make a keepsake PDF</button></div><div class="fine">A small book of the trip to save, print or send: the route map, your ${esc(bk.title.toLowerCase())}, photos, each day and the trip in numbers. Made on this device.</div></div>` : ''}`;
 }
 function phrasesHTML() {
   let i = 0;
@@ -3136,7 +3136,7 @@ async function saveKeepsake() {
   const old = $('#kpScrim'); if (old) old.remove();
   const el = document.createElement('div'); el.className = 'scrim'; el.id = 'kpScrim';
   el.innerHTML = `<div class="dlg" role="dialog" aria-label="Keepsake book" style="width:min(440px,100%)"><div class="dlg-h"><h2>Your keepsake book is ready</h2><button class="iconbtn" type="button" data-kx aria-label="Close">${icon('x')}</button></div>
-    <div class="dlg-b"><p class="gm-p"><b>${esc(S.settings.title || 'Our trip')}</b>, ${r.pages} pages: the route map, your ${esc(BOOK().count)}, photos, the trip day by day and the trip in numbers. It was made on this device and hasn't been sent anywhere.</p></div>
+    <div class="dlg-b"><p class="gm-p"><b>${esc(S.settings.title || 'Our trip')}</b>, ${r.pages} pages: the route map, your ${esc(BOOK().title.toLowerCase())}, photos, the trip day by day and the trip in numbers. It was made on this device and hasn't been sent anywhere.</p></div>
     <div class="dlg-f"><button class="btn btn-primary" type="button" data-ks>${icon('upload')}Save or share the PDF</button><button class="btn" type="button" data-kx>Close</button></div></div>`;
   el.addEventListener('click', async e => {
     if (e.target === el || e.target.closest('[data-kx]')) { el.remove(); return; }
