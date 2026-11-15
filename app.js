@@ -1671,7 +1671,7 @@ function stampsHTML() {
   const total = [...S.places.values()].filter(p => p.kind !== 'note').length, bk = BOOK(), kind = COUNTRY().book;
   return viewHead(bk.title, `${v.length} of ${total} places`) + `<div class="sec">${v.length ? `<div class="stampbook ${kind}">${v.map(p => `<button class="stampcell" type="button" data-id="${esc(p.id)}">${stampSVG(p)}<span>${esc(fmtShort(p.visited))}</span></button>`).join('')}</div>`
     : `<div class="empty" style="padding:0"><b>No ${esc(bk.count)} yet</b>${esc(COUNTRY().bookNote)} Open a place and tap "We've been here" to add it to this book.</div>`}</div>
-    ${PWA ? `<div class="sec"><span class="label">Keep it</span><div class="acts"><button class="btn" type="button" data-keepsake>${icon('doc')}Make a keepsake PDF</button></div><div class="fine">A small book of the trip to save, print or send: the route map, your ${esc(bk.title.toLowerCase())}, photos, each day and the trip in numbers. Made on this device.</div></div>` : ''}`;
+    ${PWA ? `<div class="sec"><span class="label">Keep it</span><div class="acts"><button class="btn" type="button" data-keepsake>${icon('doc')}Make a keepsake book</button></div><div class="fine">Turns the trip into pages ready for a printed photo book: a cover with your route, then every photo you added, one to a page, with its place and date. Sized for a 20 × 15 cm landscape book. Made on this device.</div></div>` : ''}`;
 }
 function phrasesHTML() {
   let i = 0;
@@ -2907,11 +2907,16 @@ $('#pbody').addEventListener('click', e => {
   if (e.target.closest('[data-gmimport]')) openListImport(null);
 });
 
-/* ---------- keepsake PDF: the trip as a small book to keep ----------
-   Made on the device, with no internet: each A4 page is drawn on a canvas in Waymark's daytime colours, saved as a
-   JPEG, and the pages are bound into a PDF written by hand below (no library). Pages: a cover with the route map,
-   the stamps, postcards or patches, the photos, the trip day by day, and the trip in numbers. */
-const KP = { W: 1240, H: 1754, M: 96, paper: '#eadfbe', surface: '#f6efda', sunk: '#e1d4ad', ink: '#1b1d2e', ink2: '#4c4a52', ink3: '#625e55', red: '#c43d22', blue: '#2b3b8f', yellow: '#b39549', sea: '#2a3156', land: '#f1e7c9', line: 'rgba(27,29,46,.22)' };
+/* ---------- keepsake book: the trip as pages ready for a photo book printer ----------
+   Made on the device, with no internet. Every page is drawn on a canvas, on white paper with Waymark's daytime colours, at 4:3
+   landscape, 2400 x 1800 px, which is a 20 x 15 cm page at 300 dpi (Popsa's medium landscape book, and a clean fit
+   for other landscape books). Drawing uses a 1200 x 900 grid scaled by two. Anything that matters stays inside the
+   margin M, so a printer trimming the edge or cropping to a slightly different shape never cuts text.
+   Two things come out of the same pages: a set of numbered JPEGs for apps that build books from photos (Popsa,
+   Snapfish, Mixbook), and a PDF written by hand below (no library) for printers that take a finished file (Blurb,
+   Mixam). The book is the cover (title and route map) and then nothing but the trip's photos, one to a page, each
+   with its place, area and date in small text beside it. */
+const KP = { W: 1200, H: 900, M: 76, S: 2, MIN: 20, MAX: 120, paper: '#ffffff', surface: '#f6efda', sunk: '#e1d4ad', ink: '#1b1d2e', ink2: '#4c4a52', ink3: '#625e55', red: '#c43d22', blue: '#2b3b8f', yellow: '#b39549', sea: '#2a3156', land: '#f1e7c9', line: 'rgba(27,29,46,.22)' };
 const KP_VARS = { surface: KP.surface, paper: KP.paper, sunk: KP.sunk, ink: KP.ink, 'ink-2': KP.ink2, 'ink-3': KP.ink3, red: KP.red, blue: KP.blue, yellow: KP.yellow, 'red-ink': '#a3301a', 'blue-ink': KP.blue, 'yellow-ink': '#6e5518', 'on-red': '#ffffff', 'on-blue': KP.surface, 'on-yellow': KP.ink };
 const KP_FONT = '"Plus Jakarta Sans","Noto Sans JP","Hiragino Sans",system-ui,sans-serif';
 const kpKindColor = k => ({ red: KP.red, blue: KP.blue, yellow: KP.yellow, ink: KP.ink })[(KINDS[k] || KINDS.see).color];
@@ -2952,25 +2957,32 @@ function kpWrap(ctx, text, maxW, maxLines) {
 }
 const kpFit = (ctx, text, maxW) => { let t = String(text); if (ctx.measureText(t).width <= maxW) return t; while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1); return t + '…'; };
 function kpPage() {
-  const c = document.createElement('canvas'); c.width = KP.W; c.height = KP.H; const ctx = c.getContext('2d');
-  ctx.fillStyle = KP.paper; ctx.fillRect(0, 0, KP.W, KP.H); ctx.textBaseline = 'alphabetic';
+  const c = document.createElement('canvas'); c.width = KP.W * KP.S; c.height = KP.H * KP.S; const ctx = c.getContext('2d');
+  ctx.scale(KP.S, KP.S); ctx.fillStyle = KP.paper; ctx.fillRect(0, 0, KP.W, KP.H); ctx.textBaseline = 'alphabetic';
   return { c, ctx };
 }
 function kpHead(ctx, label, title) {
-  ctx.fillStyle = KP.ink2; kpFont(ctx, 800, 22); ctx.fillText(label.toUpperCase().split('').join(' '), KP.M, KP.M + 8);
-  ctx.fillStyle = KP.ink; kpFont(ctx, 800, 68); ctx.fillText(kpFit(ctx, title, KP.W - KP.M * 2), KP.M, KP.M + 84);
-  ctx.fillRect(KP.M, KP.M + 112, KP.W - KP.M * 2, 3);
-  return KP.M + 168;
+  ctx.fillStyle = KP.ink2; kpFont(ctx, 800, 15); ctx.fillText(label.toUpperCase().split('').join(' '), KP.M, KP.M + 10);
+  ctx.fillStyle = KP.ink; kpFont(ctx, 800, 48); ctx.fillText(kpFit(ctx, title, KP.W - KP.M * 2), KP.M - 2, KP.M + 66);
+  ctx.fillRect(KP.M, KP.M + 86, KP.W - KP.M * 2, 2);
+  return KP.M + 130;
 }
-const kpBlob = c => new Promise(res => c.toBlob(b => res(b), 'image/jpeg', 0.86));
+// a finished page: number it, keep it as a JPEG and let the canvas go, so a long book never holds many canvases
+let kpOut = null;
+async function kpEmit(pg, name, pad) {
+  const n = kpOut.length;
+  if (n) { pg.ctx.fillStyle = KP.ink3; kpFont(pg.ctx, 700, 13); pg.ctx.textAlign = 'center'; pg.ctx.fillText(String(n), KP.W / 2, KP.H - KP.M + 36); pg.ctx.textAlign = 'left'; }
+  const blob = await kpBlob(pg.c); kpOut.push({ name: `${String(n).padStart(2, '0')}-${name}`, blob, w: pg.c.width, h: pg.c.height, pad: !!pad }); pg.c.width = pg.c.height = 0;
+}
+const kpBlob = c => new Promise(res => c.toBlob(b => res(b), 'image/jpeg', 0.9));
 // the route on a plain map: land, the line between stays, and every place as its shape
-async function kpMap(ctx, x, y, w, h) {
+async function kpMap(ctx, x, y, w, h, pad = 40, fit = null, span = [0.4, 0.3]) {
   const pts = [...S.places.values()].filter(p => hasLoc(p) && p.kind !== 'note' && p.status !== 'maybe'), stays = routeStays();
   let lo = [180, 85], hi = [-180, -85];
-  for (const p of pts) { lo = [Math.min(lo[0], p.lng), Math.min(lo[1], p.lat)]; hi = [Math.max(hi[0], p.lng), Math.max(hi[1], p.lat)]; }
-  if (!pts.length) { const b = COUNTRY().bbox; lo = [b[0], b[1]]; hi = [b[2], b[3]]; }
-  const dx = Math.max(0.4, (hi[0] - lo[0]) * 0.18), dy = Math.max(0.3, (hi[1] - lo[1]) * 0.18);
-  const proj = d3.geoMercator().fitExtent([[x + 40, y + 40], [x + w - 40, y + h - 40]], { type: 'MultiPoint', coordinates: [[lo[0] - dx, lo[1] - dy], [hi[0] + dx, hi[1] + dy]] });
+  for (const p of fit || pts) { lo = [Math.min(lo[0], p.lng), Math.min(lo[1], p.lat)]; hi = [Math.max(hi[0], p.lng), Math.max(hi[1], p.lat)]; }
+  if (!(fit || pts).length) { const b = COUNTRY().bbox; lo = [b[0], b[1]]; hi = [b[2], b[3]]; }
+  const dx = Math.max(span[0], (hi[0] - lo[0]) * 0.18), dy = Math.max(span[1], (hi[1] - lo[1]) * 0.18);
+  const proj = d3.geoMercator().fitExtent([[x + pad, y + pad], [x + w - pad, y + h - pad]], { type: 'MultiPoint', coordinates: [[lo[0] - dx, lo[1] - dy], [hi[0] + dx, hi[1] + dy]] });
   const path = d3.geoPath(proj, ctx);
   ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
   ctx.fillStyle = KP.sea; ctx.fillRect(x, y, w, h);
@@ -2990,124 +3002,61 @@ async function kpMap(ctx, x, y, w, h) {
     const [a, b] = xy(p); ctx.fillStyle = KP.surface; ctx.fillRect(a - 20, b - 20, 40, 40); ctx.fillStyle = KP.red; ctx.fillRect(a - 16, b - 16, 32, 32);
     ctx.fillStyle = '#fff'; kpFont(ctx, 800, 20); ctx.textAlign = 'center'; ctx.fillText(String(i + 1), a, b + 7); ctx.textAlign = 'left';
   });
-  ctx.restore(); ctx.strokeStyle = KP.ink; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, h);
+  ctx.restore(); ctx.strokeStyle = KP.ink; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
   return stays;
 }
 const kpDates = () => `${parseD(TRIP.start).toLocaleDateString('en-AU', { day: 'numeric', month: 'long' })} to ${parseD(TRIP.end).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+const kpNum = (ctx, n, x, y, s) => { ctx.fillStyle = KP.red; ctx.fillRect(x, y, s, s); ctx.fillStyle = '#fff'; kpFont(ctx, 800, s * 0.6); ctx.textAlign = 'center'; ctx.fillText(String(n), x + s / 2, y + s * 0.72); ctx.textAlign = 'left'; };
+const kpPlural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+// the cover: the title down the left, the route map running off the other three edges
 async function kpCover() {
-  const { c, ctx } = kpPage(), M = KP.M, names = (S.settings.names || []).filter(Boolean);
-  ctx.fillStyle = KP.red; ctx.fillRect(0, 0, KP.W, 28);
-  kpMark(ctx, M, M + 10, 92);
-  ctx.fillStyle = KP.ink2; kpFont(ctx, 800, 22); ctx.textAlign = 'right'; ctx.fillText('A  W A Y M A R K  K E E P S A K E', KP.W - M, M + 46); ctx.textAlign = 'left';
-  ctx.fillStyle = KP.ink; kpFont(ctx, 800, 124); let y = M + 240;
-  for (const l of kpWrap(ctx, S.settings.title || COUNTRY().name, KP.W - M * 2, 2)) { ctx.fillText(l, M - 4, y); y += 128; }
-  kpFont(ctx, 700, 36); ctx.fillStyle = KP.ink2; ctx.fillText(`${COUNTRY().name} · ${kpDates()}`, M, y - 50);
-  if (names.length) { ctx.fillStyle = KP.ink; kpFont(ctx, 800, 36); ctx.fillText(names.join(' and '), M, y + 2); }
-  const top = y + 56, h = KP.H - top - 300, stays = await kpMap(ctx, M, top, KP.W - M * 2, h);
-  // the stays, numbered as on the map
-  ctx.fillStyle = KP.ink; let sy = top + h + 52; const colW = (KP.W - M * 2) / 2;
-  stays.slice(0, 8).forEach((p, i) => {
-    const cx = M + (i % 2) * colW, cy = sy + Math.floor(i / 2) * 46;
-    ctx.fillStyle = KP.red; ctx.fillRect(cx, cy - 26, 32, 32); ctx.fillStyle = '#fff'; kpFont(ctx, 800, 20); ctx.textAlign = 'center'; ctx.fillText(String(i + 1), cx + 16, cy - 3); ctx.textAlign = 'left';
-    ctx.fillStyle = KP.ink; kpFont(ctx, 700, 26); ctx.fillText(kpFit(ctx, p.name, colW - 70), cx + 46, cy);
-  });
+  const pg = kpPage(), { ctx } = pg, M = KP.M, LW = 450, tw = LW - M - 36, names = (S.settings.names || []).filter(Boolean), title = S.settings.title || COUNTRY().name;
+  const stays = await kpMap(ctx, LW, -6, KP.W - LW + 6, KP.H + 12, 100);
+  kpMark(ctx, M, M + 4, 70);
+  ctx.fillStyle = KP.ink2; kpFont(ctx, 800, 13); ctx.fillText('A  W A Y M A R K  K E E P S A K E', M, M + 96);
+  let fs = 76; for (; fs > 40; fs -= 4) { kpFont(ctx, 800, fs); if (title.split(/\s+/).every(w => ctx.measureText(w).width <= tw) && kpWrap(ctx, title, tw).length <= 3) break; }
+  ctx.fillStyle = KP.ink; kpFont(ctx, 800, fs); let y = M + 116 + fs;
+  for (const l of kpWrap(ctx, title, tw, 3)) { ctx.fillText(kpFit(ctx, l, tw), M - 2, y); y += fs * 1.04; }
+  y += 4; ctx.fillStyle = KP.ink2; kpFont(ctx, 700, 20);
+  for (const l of [COUNTRY().name, ...kpWrap(ctx, kpDates(), tw)]) { ctx.fillText(l, M, y); y += 28; }
+  if (names.length) { ctx.fillStyle = KP.ink; kpFont(ctx, 800, 20); ctx.fillText(kpFit(ctx, names.join(' and '), tw), M, y + 8); }
   const all = [...S.places.values()].filter(p => p.kind !== 'note'), bk = BOOK();
-  ctx.fillStyle = KP.ink; ctx.fillRect(M, KP.H - M - 44, KP.W - M * 2, 3);
-  kpFont(ctx, 800, 26); ctx.fillText([`${TRIP_DAYS.length} days`, `${stays.length} stay${stays.length === 1 ? '' : 's'}`, `${all.filter(p => p.status !== 'maybe').length} places`, `${all.filter(p => p.visited).length} ${bk.count}`].join('   ·   '), M, KP.H - M);
-  return c;
+  const lines = [kpPlural(TRIP_DAYS.length, 'day'), kpPlural(stays.length, 'stay'), kpPlural(all.filter(p => p.status !== 'maybe').length, 'place'), `${all.filter(p => p.visited).length} ${bk.count}`];
+  let by = KP.H - M - lines.length * 30; ctx.fillStyle = KP.ink; ctx.fillRect(M, by - 14, tw, 2); kpFont(ctx, 800, 20);
+  for (const l of lines) { by += 30; ctx.fillText(l, M, by); }
+  await kpEmit(pg, 'cover');
 }
-async function kpBook() {
-  const v = [...S.places.values()].filter(p => p.visited).sort((a, b) => a.visited.localeCompare(b.visited) || a.name.localeCompare(b.name)); if (!v.length) return [];
-  const kind = COUNTRY().book, cols = kind === 'postcards' ? 2 : 3, gap = 36, cw = (KP.W - KP.M * 2 - gap * (cols - 1)) / cols, ih = kind === 'postcards' ? cw * 96 / 140 : cw * 0.8, ch = ih + 92, out = [];
-  let pg = null, y0 = 0, i = 0;
-  for (const p of v) {
-    if (!pg || y0 + Math.floor(i / cols) * (ch + gap) + ch > KP.H - KP.M) { pg = kpPage(); out.push(pg.c); y0 = kpHead(pg.ctx, out.length > 1 ? `${BOOK().title}, continued` : 'Where we have been', BOOK().title); i = 0; }
-    const ctx = pg.ctx, x = KP.M + (i % cols) * (cw + gap), y = y0 + Math.floor(i / cols) * (ch + gap), im = await kpSvgImage(stampSVG(p), kind === 'stamps' ? KP.red : KP.ink);
-    const iw = kind === 'postcards' ? cw : ih, rot = ((hash(p.id) % 9) - 4) * Math.PI / 180;
-    if (im) { ctx.save(); ctx.translate(x + cw / 2, y + ih / 2); ctx.rotate(rot); if (kind === 'stamps') ctx.globalCompositeOperation = 'multiply'; ctx.drawImage(im, -iw / 2 * 0.94, -ih / 2 * 0.94, iw * 0.94, ih * 0.94); ctx.restore(); }
-    ctx.textAlign = 'center'; ctx.fillStyle = KP.ink; kpFont(ctx, 800, 24); ctx.fillText(kpFit(ctx, p.name, cw), x + cw / 2, y + ih + 44);
-    ctx.fillStyle = KP.ink2; kpFont(ctx, 600, 20); ctx.fillText(fmtDay(p.visited), x + cw / 2, y + ih + 74); ctx.textAlign = 'left'; i++;
-  }
-  return out;
-}
+// every page after the cover: one photo, whole and uncropped, with small text beside it saying when and where
 async function kpPhotos() {
-  const pics = []; for (const p of itinerary()) for (const f of picsOf(p)) { const s = photoSrc(f); if (s && pics.length < 24) pics.push([p, s]); }
-  if (!pics.length) return [];
-  const cols = 3, gap = 28, cw = (KP.W - KP.M * 2 - gap * 2) / cols, ch = cw + 60, out = []; let pg = null, y0 = 0, i = 0;
-  for (const [p, src] of pics) {
-    if (!pg || y0 + Math.floor(i / cols) * (ch + gap) + ch > KP.H - KP.M) { pg = kpPage(); out.push(pg.c); y0 = kpHead(pg.ctx, 'Photos', out.length > 1 ? 'More photos' : 'What it looked like'); i = 0; }
-    const ctx = pg.ctx, x = KP.M + (i % cols) * (cw + gap), y = y0 + Math.floor(i / cols) * (ch + gap), im = await kpImage(src);
-    ctx.fillStyle = KP.sunk; ctx.fillRect(x, y, cw, cw);
-    if (im && im.width) { const s = Math.min(im.width, im.height); try { ctx.drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, x, y, cw, cw); } catch (e) {} }
-    ctx.strokeStyle = KP.ink; ctx.lineWidth = 3; ctx.strokeRect(x, y, cw, cw);
-    ctx.fillStyle = KP.ink; kpFont(ctx, 700, 22); ctx.fillText(kpFit(ctx, p.name, cw), x, y + cw + 36); i++;
+  const pics = []; for (const p of itinerary()) for (const f of picsOf(p)) { const s = photoSrc(f); if (s && pics.length < KP.MAX) pics.push([p, s, f]); }
+  const M = KP.M, TW = 210, gap = 30, bw = KP.W - M * 2 - TW - gap, bh = KP.H - M * 2; let n = 0;
+  for (const [p, src, f] of pics) {
+    const im = await kpImage(src); if (!im || !im.width || !im.height) continue;
+    const pg = kpPage(), { ctx } = pg, a = im.width / im.height, wide = a >= bw / bh, dw = wide ? bw : bh * a, dh = wide ? bw / a : bh, dy = M + (bh - dh) / 2;
+    try { ctx.drawImage(im, M, dy, dw, dh); } catch (e) {}
+    ctx.strokeStyle = KP.ink; ctx.lineWidth = 2; ctx.strokeRect(M, dy, dw, dh);
+    const x = M + dw + gap, w = KP.W - M - x, day = p.start || p.visited || (f.at ? isoOf(new Date(f.at)) : ''), area = hasLoc(p) ? areaOf(p) : '';
+    const lines = []; ctx.fillStyle = KP.ink; kpFont(ctx, 800, 19); for (const l of kpWrap(ctx, p.name, w, 4)) lines.push([l, 800, 19, KP.ink, 25]);
+    if (p.ja) lines.push([p.ja, 600, 15, KP.ink2, 24]);
+    if (area && area !== p.name && area !== 'Elsewhere') lines.push([area, 600, 15, KP.ink2, 22]);
+    if (day) lines.push([parseD(day).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }), 600, 15, KP.ink2, 22]);
+    let y = dy + dh - lines.reduce((t, l) => t + l[4], 0) - 14;
+    ctx.fillStyle = KP.red; ctx.fillRect(x, y, 28, 5); y += 14;
+    for (const [t, wt, px, col, lh] of lines) { y += lh; ctx.fillStyle = col; kpFont(ctx, wt, px); ctx.fillText(kpFit(ctx, t, w), x, y); }
+    await kpEmit(pg, 'photo'); n++;
   }
-  return out;
+  return n;
 }
-function kpDays() {
-  const out = [], W = KP.W - KP.M * 2; let pg = null, y = 0;
-  const need = h => { if (!pg || y + h > KP.H - KP.M) { pg = kpPage(); out.push(pg.c); y = kpHead(pg.ctx, 'Day by day', out.length > 1 ? 'The trip, continued' : 'The trip'); } return pg.ctx; };
-  const stays = [...S.places.values()].filter(p => p.kind === 'stay' && p.status !== 'maybe' && p.start && p.end);
-  TRIP_DAYS.forEach((d, di) => {
-    const items = itinerary().filter(p => p.start === d && p.kind !== 'note' && p.status !== 'maybe' && p.kind !== 'stay'), sleep = stays.find(s => s.start <= d && d < s.end);
-    let ctx = need(84 + (items.length ? 48 : 0));
-    ctx.fillStyle = KP.red; ctx.fillRect(KP.M, y - 30, 8, 40);
-    ctx.fillStyle = KP.ink; kpFont(ctx, 800, 32); ctx.fillText(`Day ${di + 1}`, KP.M + 24, y);
-    const dw = ctx.measureText(`Day ${di + 1}`).width; ctx.fillStyle = KP.ink2; kpFont(ctx, 700, 26); ctx.fillText(fmtDay(d), KP.M + 24 + dw + 18, y);
-    if (sleep) { ctx.textAlign = 'right'; kpFont(ctx, 600, 22); ctx.fillText(kpFit(ctx, 'Slept at ' + sleep.name, W * 0.5), KP.M + W, y); ctx.textAlign = 'left'; }
-    y += 22;
-    for (const p of items) {
-      ctx = need(46); y += 42;
-      kpShape(ctx, p.kind, KP.M + 40, y - 9, 10, kpKindColor(p.kind));
-      ctx.fillStyle = KP.ink2; kpFont(ctx, 700, 22); ctx.fillText(p.time || '', KP.M + 68, y);
-      ctx.fillStyle = KP.ink; kpFont(ctx, 700, 26); const nx = KP.M + 150, nm = kpFit(ctx, p.name, W - 150 - (p.ja ? 260 : 0)); ctx.fillText(nm, nx, y);
-      if (p.ja) { const nw = ctx.measureText(nm).width; ctx.fillStyle = KP.ink2; kpFont(ctx, 600, 22); ctx.fillText(kpFit(ctx, p.ja, 240), nx + nw + 16, y); }
-      if (p.visited) { ctx.fillStyle = KP.red; kpFont(ctx, 800, 18); ctx.textAlign = 'right'; ctx.fillText('BEEN', KP.M + W, y); ctx.textAlign = 'left'; }
-    }
-    y += 26; ctx.fillStyle = KP.line; ctx.fillRect(KP.M, y, W, 2); y += 54;
-  });
-  return out;
-}
-function kpNumbers() {
-  const { c, ctx } = kpPage(), M = KP.M, W = KP.W - M * 2; let y = kpHead(ctx, 'To finish', 'The trip in numbers');
-  const all = [...S.places.values()].filter(p => p.kind !== 'note' && p.status !== 'maybe'), nights = Math.max(0, TRIP_DAYS.length - 1);
-  const tiles = [[String(TRIP_DAYS.length), 'days'], [String(nights), 'nights'], [String(all.length), 'places'], [String(all.filter(p => p.visited).length), BOOK().count]];
-  const tw = (W - 3 * 24) / 4;
-  tiles.forEach(([n, l], i) => { const x = M + i * (tw + 24); ctx.strokeStyle = KP.ink; ctx.lineWidth = 3; ctx.strokeRect(x, y, tw, 200); ctx.fillStyle = KP.ink; kpFont(ctx, 800, 92); ctx.fillText(n, x + 22, y + 116); ctx.fillStyle = KP.ink2; kpFont(ctx, 700, 26); ctx.fillText(l, x + 24, y + 166); });
-  y += 280; ctx.fillStyle = KP.ink; kpFont(ctx, 800, 34); ctx.fillText('What we did', M, y); y += 30;
-  const max = Math.max(1, ...Object.keys(KINDS).map(k => all.filter(p => p.kind === k).length));
-  for (const k of Object.keys(KINDS)) {
-    if (k === 'note') continue; const n = all.filter(p => p.kind === k).length; if (!n) continue; y += 54;
-    kpShape(ctx, k, M + 16, y - 10, 13, kpKindColor(k)); ctx.fillStyle = KP.ink; kpFont(ctx, 700, 26); ctx.fillText(KINDS[k].label, M + 52, y);
-    ctx.fillStyle = KP.sunk; ctx.fillRect(M + 280, y - 24, W - 380, 28); ctx.fillStyle = kpKindColor(k); ctx.fillRect(M + 280, y - 24, (W - 380) * n / max, 28);
-    ctx.fillStyle = KP.ink; kpFont(ctx, 800, 26); ctx.textAlign = 'right'; ctx.fillText(String(n), M + W, y); ctx.textAlign = 'left';
-  }
-  const spend = [...S.spend.values()], total = spend.reduce((s, x) => s + x.amount, 0);
-  if (total > 0) {
-    y += 110; ctx.fillStyle = KP.ink; kpFont(ctx, 800, 34); ctx.fillText('What it cost', M, y);
-    ctx.textAlign = 'right'; kpFont(ctx, 800, 34); ctx.fillText(yen(total) + (S.settings.rate ? `  ·  ${aud(total)}` : ''), M + W, y); ctx.textAlign = 'left'; y += 30;
-    const cm = Math.max(1, ...Object.keys(CATS).map(k => spend.filter(x => x.cat === k).reduce((s, x) => s + x.amount, 0)));
-    for (const [k, cat] of Object.entries(CATS)) {
-      const v = spend.filter(x => x.cat === k).reduce((s, x) => s + x.amount, 0); if (!v) continue; y += 54;
-      ctx.fillStyle = KP.ink; kpFont(ctx, 700, 26); ctx.fillText(cat.label, M, y);
-      ctx.fillStyle = KP.sunk; ctx.fillRect(M + 280, y - 24, W - 560, 28); ctx.fillStyle = kpKindColor(cat.kind); ctx.fillRect(M + 280, y - 24, (W - 560) * v / cm, 28);
-      ctx.fillStyle = KP.ink; kpFont(ctx, 800, 26); ctx.textAlign = 'right'; ctx.fillText(yen(v), M + W, y); ctx.textAlign = 'left';
-    }
-    ctx.fillStyle = KP.ink2; kpFont(ctx, 600, 20); ctx.fillText('From the expenses logged in Waymark.', M, y + 50);
-  }
-  kpMark(ctx, M, KP.H - M - 50, 62); ctx.fillStyle = KP.ink2; kpFont(ctx, 700, 22); ctx.fillText('Made with Waymark, the trip map for two.', M + 84, KP.H - M - 22);
-  return c;
-}
-// bind JPEG pages into a PDF: one image filling each A4 page
+// bind JPEG pages into a PDF: one image filling each 20 x 15 cm page
 function kpPdf(pages, title) {
-  const enc = new TextEncoder(), parts = [], offs = []; let len = 0;
+  const enc = new TextEncoder(), parts = [], offs = [], PW = 566.93, PH = 425.2; let len = 0;
   const push = x => { const b = typeof x === 'string' ? enc.encode(x) : x; parts.push(b); len += b.length; };
   const obj = (n, body, stream) => { offs[n] = len; push(`${n} 0 obj\n${body}\n`); if (stream) { push('stream\n'); push(stream); push('\nendstream\n'); } push('endobj\n'); };
   push('%PDF-1.4\n'); push(new Uint8Array([37, 226, 227, 207, 211, 10]));
   const n = pages.length; obj(1, '<< /Type /Catalog /Pages 2 0 R >>'); obj(2, `<< /Type /Pages /Kids [${pages.map((_, i) => `${3 + i * 3} 0 R`).join(' ')}] /Count ${n} >>`);
   pages.forEach((j, i) => {
-    const p = 3 + i * 3, cs = enc.encode('q 595.28 0 0 841.89 0 0 cm /Im0 Do Q');
-    obj(p, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /XObject << /Im0 ${p + 2} 0 R >> >> /Contents ${p + 1} 0 R >>`);
+    const p = 3 + i * 3, cs = enc.encode(`q ${PW} 0 0 ${PH} 0 0 cm /Im0 Do Q`);
+    obj(p, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PW} ${PH}] /Resources << /XObject << /Im0 ${p + 2} 0 R >> >> /Contents ${p + 1} 0 R >>`);
     obj(p + 1, `<< /Length ${cs.length} >>`, cs);
     obj(p + 2, `<< /Type /XObject /Subtype /Image /Width ${j.w} /Height ${j.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${j.bytes.length} >>`, j.bytes);
   });
@@ -3116,35 +3065,63 @@ function kpPdf(pages, title) {
   push(`trailer\n<< /Size ${info + 1} /Root 1 0 R /Info ${info} 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
   return new Blob(parts, { type: 'application/pdf' });
 }
+// the page pictures in one plain zip (stored, not squeezed), for a device that can't share many files at once
+function kpZip(files) {
+  const T = kpZip.t || (kpZip.t = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; }));
+  const crc = u => { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = T[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  const enc = new TextEncoder(), parts = [], cd = []; let off = 0, cdLen = 0;
+  const rec = (sig, vals) => { const b = new Uint8Array(4 + vals.reduce((s, v) => s + v[0], 0)), d = new DataView(b.buffer); d.setUint32(0, sig, true); let o = 4; for (const [w, v] of vals) { if (w === 2) d.setUint16(o, v, true); else d.setUint32(o, v, true); o += w; } return b; };
+  for (const f of files) {
+    const nm = enc.encode(f.name), c = crc(f.bytes), common = [[2, 20], [2, 0], [2, 0], [2, 0], [2, 0x21], [4, c], [4, f.bytes.length], [4, f.bytes.length], [2, nm.length], [2, 0]];
+    const lh = rec(0x04034b50, common); parts.push(lh, nm, f.bytes);
+    const ch = rec(0x02014b50, [[2, 20], ...common, [2, 0], [2, 0], [2, 0], [4, 0], [4, off]]); cd.push(ch, nm); cdLen += ch.length + nm.length;
+    off += lh.length + nm.length + f.bytes.length;
+  }
+  return new Blob([...parts, ...cd, rec(0x06054b50, [[2, 0], [2, 0], [2, files.length], [2, files.length], [4, cdLen], [4, off], [2, 0]])], { type: 'application/zip' });
+}
 let kpBusy = false;
+// returns the page pictures (cover first), the PDF, and the counts the ready screen talks about
 async function makeKeepsake() {
   if (kpBusy) return null; kpBusy = true; toast('Making your keepsake book…');
   try {
-    try { if (document.fonts && document.fonts.load) await Promise.all([document.fonts.load(`800 40px "Plus Jakarta Sans"`), document.fonts.load(`700 40px "Plus Jakarta Sans"`)]); } catch (e) {}
-    const canvases = [await kpCover(), ...await kpBook(), ...await kpPhotos(), ...kpDays(), kpNumbers()], pages = [];
-    for (const c of canvases) { const b = await kpBlob(c); pages.push({ bytes: new Uint8Array(await b.arrayBuffer()), w: c.width, h: c.height }); c.width = c.height = 0; }
-    return { blob: kpPdf(pages, S.settings.title || 'Our trip'), pages: pages.length };
-  } finally { kpBusy = false; }
+    try { if (document.fonts && document.fonts.load) await Promise.all([document.fonts.load(`800 40px "Plus Jakarta Sans"`), document.fonts.load(`700 40px "Plus Jakarta Sans"`), document.fonts.load(`600 40px "Plus Jakarta Sans"`)]); } catch (e) {}
+    kpOut = [];
+    await kpCover(); const photos = await kpPhotos(), pages = kpOut.length - 1;   // the cover is not counted as a page
+    const all = kpOut; kpOut = null;
+    for (const p of all) p.bytes = new Uint8Array(await p.blob.arrayBuffer());
+    const slug = (S.settings.title || 'trip').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'trip';
+    const images = all.filter(p => !p.pad).map(p => ({ name: `${slug}-${p.name}.jpg`, bytes: p.bytes }));
+    return { blob: kpPdf(all, S.settings.title || 'Our trip'), images, pages, photos, slug };
+  } finally { kpBusy = false; kpOut = null; }
+}
+function kpDownload(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
 }
 // Making the book takes a few seconds, and a phone only lets a tap open the share sheet straight away,
-// so the finished book waits behind its own button.
+// so the finished book waits behind its own buttons.
 async function saveKeepsake() {
   if (kpBusy) return;
   let r = null; try { r = await makeKeepsake(); } catch (e) { r = null; }
   if (!r) { toast("The keepsake book couldn't be made. Try again."); return; }
-  const name = `${(S.settings.title || 'trip').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'trip'}-keepsake.pdf`, file = new File([r.blob], name, { type: 'application/pdf' });
+  if (!r.photos) { toast('Add photos to your places first. The book is made from them.'); return; }
+  const title = S.settings.title || 'Our trip', pdf = new File([r.blob], `${r.slug}-keepsake.pdf`, { type: 'application/pdf' });
+  const pics = r.images.map(f => new File([f.bytes], f.name, { type: 'image/jpeg' })), more = Math.max(0, KP.MIN - r.pages);
   const old = $('#kpScrim'); if (old) old.remove();
   const el = document.createElement('div'); el.className = 'scrim'; el.id = 'kpScrim';
-  el.innerHTML = `<div class="dlg" role="dialog" aria-label="Keepsake book" style="width:min(440px,100%)"><div class="dlg-h"><h2>Your keepsake book is ready</h2><button class="iconbtn" type="button" data-kx aria-label="Close">${icon('x')}</button></div>
-    <div class="dlg-b"><p class="gm-p"><b>${esc(S.settings.title || 'Our trip')}</b>, ${r.pages} pages: the route map, your ${esc(BOOK().title.toLowerCase())}, photos, the trip day by day and the trip in numbers. It was made on this device and hasn't been sent anywhere.</p></div>
-    <div class="dlg-f"><button class="btn btn-primary" type="button" data-ks>${icon('upload')}Save or share the PDF</button><button class="btn" type="button" data-kx>Close</button></div></div>`;
+  el.innerHTML = `<div class="dlg" role="dialog" aria-label="Keepsake book" style="width:min(460px,100%)"><div class="dlg-h"><h2>Your keepsake book is ready</h2><button class="iconbtn" type="button" data-kx aria-label="Close">${icon('x')}</button></div>
+    <div class="dlg-b"><p class="gm-p"><b>${esc(title)}</b>: a cover and ${r.pages} photo page${r.pages === 1 ? '' : 's'}, each with its place and date, sized for a 20 × 15 cm landscape photo book. Made on this device and not sent anywhere.</p>
+    <ol class="kp-steps"><li>Tap <b>Save the pages</b>, then <b>Save ${pics.length} Images</b>.</li><li>In Popsa, or any photo book app, start a landscape book and pick those pictures from your photos.</li><li>Give each one a full page of its own, in the order of the small number at the foot of the page. The first picture is the cover.</li>${more ? `<li>Most books need ${KP.MIN} pages. Add ${more} more photo${more === 1 ? '' : 's'} to your places in Waymark and make the book again, or add them in the photo book app.</li>` : ''}</ol>
+    <p class="fine">Using a printer that takes a finished file, such as Blurb or Mixam? Save the PDF.</p></div>
+    <div class="dlg-f"><button class="btn btn-primary" type="button" data-ki>${icon('upload')}Save the pages</button><button class="btn" type="button" data-ks>${icon('doc')}Save the PDF</button></div></div>`;
   el.addEventListener('click', async e => {
     if (e.target === el || e.target.closest('[data-kx]')) { el.remove(); return; }
-    if (!e.target.closest('[data-ks]')) return;
-    try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: S.settings.title || 'Our trip' }); el.remove(); return; } }
+    const im = e.target.closest('[data-ki]'); if (!im && !e.target.closest('[data-ks]')) return;
+    const files = im ? pics : [pdf];
+    try { if (navigator.canShare && navigator.canShare({ files })) { await navigator.share({ files, title }); return; } }
     catch (err) { if (err && err.name === 'AbortError') return; }
-    const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); el.remove(); toast('Keepsake book saved');
+    if (im) { kpDownload(kpZip(r.images), `${r.slug}-keepsake-pages.zip`); toast('Pages saved as a zip file'); }
+    else { kpDownload(pdf, pdf.name); toast('Keepsake PDF saved'); }
   });
   document.body.appendChild(el);
 }
