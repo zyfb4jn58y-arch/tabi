@@ -782,17 +782,31 @@ function normSpend(id, d) {
   return { id, amount: numv(d.amount) > 0 ? roundL(d.amount) : 0, cat: CATS[d.cat] ? d.cat : 'other', payer: d.payer === 1 ? 1 : 0,
     date: isIso(d.date) ? d.date : today(), note: str(d.note).slice(0, 120), by: str(d.by), at: numv(d.at) || 0 };
 }
+/* ---------- looks: the colour themes a trip can wear. sw is the swatch (paper, ink); theme pins day or night; bar is the phone's status bar ---------- */
+const LOOKS = {
+  ochre: { name: 'Ochre', sw: ['#eadfbe', '#1b1d2e'], theme: '', bar: '' },
+  white: { name: 'Paper white', sw: ['#ffffff', '#1b1d2e'], theme: 'light', bar: '#ffffff' },
+  stone: { name: 'Stone', sw: ['#e4e5e2', '#1b1d2e'], theme: 'light', bar: '#e4e5e2' },
+  indigo: { name: 'Indigo', sw: ['#171a2b', '#efe6cf'], theme: 'dark', bar: '#171a2b' }
+};
+let lookNow = 'ochre';
+function applyLook(look) {
+  const k = LOOKS[look] ? look : 'ochre', L = LOOKS[k], r = document.documentElement; if (k === lookNow) return; lookNow = k;
+  if (k === 'ochre') { delete r.dataset.look; delete r.dataset.theme; } else { r.dataset.look = k; r.dataset.theme = L.theme; }
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) { if (m.dataset.was == null) m.dataset.was = m.content; m.content = L.bar || m.dataset.was; }
+  try { if (GL) GL.setStyle(glStyle()); } catch (e) {}
+}
 function applySettings(st) {
   st = st && typeof st === 'object' ? st : {}; const d = DEFAULTS || {};
   const nm = Array.isArray(st.names) ? st.names : [];
   const country = COUNTRIES[st.country] ? st.country : d.country || 'JP', home = HOMES.includes(st.home) ? st.home : d.home || 'AUD';
   S.settings = {
-    country, home,
+    country, home, look: LOOKS[st.look] ? st.look : 'ochre',
     rate: numv(st.rate) > 0 && st.rate < 1e6 ? st.rate : country === 'JP' ? d.rate || 113 : 0, budget: numv(st.budget) >= 0 && st.budget ? st.budget : d.budget || 0,
     names: [str(nm[0]).trim() || (d.names && d.names[0]) || 'Me', str(nm[1]).trim() || (d.names && d.names[1]) || 'Partner'],
     title: str(st.title).trim() || d.title || 'Our trip', start: isIso(st.start) ? st.start : d.start || '', end: isIso(st.end) ? st.end : d.end || ''
   };
-  TRIP.country = S.settings.country; applyCountry();
+  TRIP.country = S.settings.country; applyCountry(); applyLook(S.settings.look);
   setTrip(S.settings.start, S.settings.end);
 }
 // the script, font and words for the trip's country
@@ -1245,12 +1259,14 @@ const isDark = () => document.documentElement.dataset.theme === 'dark' || (docum
 
 // the map style: colours come from Waymark's tokens, so it follows light and dark
 function glStyle() {
-  const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim(), dark = isDark();
+  const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim(), dark = isDark(), lk = document.documentElement.dataset.look;
+  // the small map colours with no token of their own: parks, woods, buildings and roads, for night, Paper white, Stone, then Ochre
+  const M = dark ? ['#2b3252', '#283049', '#30375a', '#3d456d', '#3a4167', '#4c5582'] : lk === 'white' ? ['#eceadf', '#e6e3d6', '#f0efea', '#dcdad2', '#ffffff', '#ffffff'] : lk === 'stone' ? ['#dcddd6', '#d5d7cf', '#e4e5e1', '#cdcfc9', '#f8f8f6', '#ffffff'] : ['#e1d4a3', '#dacd98', '#e7dab2', '#d2c291', '#fbf6e8', '#ffffff'];
   const C = {
     land: v('--land'), sea: v('--sea'), ink: v('--ink'), ink2: v('--ink-2'), ink3: v('--ink-3'), surface: v('--surface'),
     blue: v('--blue'), blueInk: v('--blue-ink'), route: v('--route'), yellow: v('--yellow'), yink: v('--yellow-ink'), seaInk: v('--sea-ink'),
-    park: dark ? '#2b3252' : '#e1d4a3', wood: dark ? '#283049' : '#dacd98', build: dark ? '#30375a' : '#e7dab2', buildLine: dark ? '#3d456d' : '#d2c291',
-    road: dark ? '#3a4167' : '#fbf6e8', major: dark ? '#4c5582' : '#ffffff', casing: dark ? '#12152a' : 'rgba(27,29,46,0.30)', rail: dark ? '#a39d8a' : '#4c4a52'
+    park: M[0], wood: M[1], build: M[2], buildLine: M[3],
+    road: M[4], major: M[5], casing: dark ? '#12152a' : 'rgba(27,29,46,0.30)', rail: dark ? '#a39d8a' : '#4c4a52'
   };
   const EN = ['coalesce', ['get', 'name:en'], ['get', 'name:latin'], ['get', 'name']];
   const LOCAL = ['coalesce', ['get', LOCAL_NAME_KEY()], ['get', 'name']];
@@ -3231,7 +3247,7 @@ const NEXT_GUESS = { JP: 'KR', KR: 'JP', TW: 'JP', TH: 'VN', VN: 'TH', ID: 'TH',
 function startTrip(next) {
   const st = local.settings; if (!parkTrip()) return;
   const cc = COUNTRIES[st.country] ? st.country : 'JP';
-  local = { places: {}, spend: {}, deleted: {}, settings: { me: st.me, names: st.names, home: st.home, tid: newId('t'), ...(next ? { journey: journeyId(st), after: cc, from: st.title || COUNTRIES[cc].name, start: st.end, country: NEXT_GUESS[cc] || 'JP', budget: 0 } : {}) } };
+  local = { places: {}, spend: {}, deleted: {}, settings: { me: st.me, names: st.names, home: st.home, look: st.look, tid: newId('t'), ...(next ? { journey: journeyId(st), after: cc, from: st.title || COUNTRIES[cc].name, start: st.end, country: NEXT_GUESS[cc] || 'JP', budget: 0 } : {}) } };
   pref('legAsk', today()); saveLocal(); location.reload();
 }
 // photos and tickets kept for a trip, found wherever they sit in its places
@@ -3284,7 +3300,7 @@ async function nextLegPrompt() {
   if (!t || pref('legAsk') === d) return; pref('legAsk', d);
   if (await ask(`On to ${COUNTRIES[t.country].name}?`, `Today falls in ${t.title}. Open it now? ${st.title || 'This part'} stays saved under Trips.`, `Open ${t.title}`, 'Not now')) openTrip(t.id);
 }
-function closeSettings() { const s = $('#setScrim'); if (s) s.remove(); }
+function closeSettings() { const s = $('#setScrim'); if (s) { s.remove(); applyLook(S.settings.look); } }   // a look tried but not saved is put back
 // today's rate: how much of the trip's currency one unit of home money buys
 async function fetchRate(home, cur) {
   if (home === cur) return 1;
@@ -3296,6 +3312,7 @@ function openSettings(first) {
   closeSettings();
   const st = local.settings || {}, names = Array.isArray(st.names) ? st.names : [];
   const has = Object.keys(local.places || {}).length > 0, cc = COUNTRIES[st.country] ? st.country : 'JP', home = HOMES.includes(st.home) ? st.home : 'AUD';
+  let look = LOOKS[st.look] ? st.look : 'ochre';
   const others = first ? tripsReg().list.filter(t => t.id !== tripId(st)).length : 0;
   const el = document.createElement('div'); el.className = 'scrim'; el.id = 'setScrim';
   const opt = (v, label, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(label)}</option>`;
@@ -3304,6 +3321,8 @@ function openSettings(first) {
       <div class="field"><label for="stMe">Your name</label><input class="input" id="stMe" autocomplete="given-name" value="${esc(st.me || '')}" placeholder="Shown on things you add"></div>
       <div class="field"><label for="stCountry">Country</label><select class="input" id="stCountry"${has ? ' disabled' : ''}>${COUNTRY_LIST.map(c => opt(c.code, c.name, c.code === cc)).join('')}</select>
         <small class="hint" id="stCountryHint">${has ? 'Set when the trip was made. Start a new trip to change it.' : 'Sets the phrases, money, local names and the keepsake book.'}</small></div>
+      <div class="field"><span class="flabel" id="stLookLbl">Colours</span><div class="looks" role="radiogroup" aria-labelledby="stLookLbl">${Object.entries(LOOKS).map(([k, l]) => `<button class="look" type="button" role="radio" aria-checked="${k === look}" data-lookpick="${k}"><span class="look-sw" style="background:linear-gradient(135deg,${l.sw[0]} 50%,${l.sw[1]} 50%)"></span>${esc(l.name)}</button>`).join('')}</div>
+        <small class="hint">Ochre turns indigo at night with your phone. Paper white and Stone stay light, and Indigo stays dark. Change it any time in Trip settings.</small></div>
       <div class="field"><label for="stTitle">Trip name</label><input class="input" id="stTitle" value="${esc(st.title || '')}" placeholder="${esc(COUNTRIES[cc].sample.title)}"></div>
       <div class="g2"><div class="field"><label for="stStart">First day</label><input class="input" type="date" id="stStart" value="${esc(st.start || '')}"></div><div class="field"><label for="stEnd">Fly home</label><input class="input" type="date" id="stEnd" value="${esc(st.end || '')}"></div></div>
       <div class="g2"><div class="field"><label for="stN0">Traveller one</label><input class="input" id="stN0" value="${esc(names[0] || st.me || '')}"></div><div class="field"><label for="stN1">Traveller two</label><input class="input" id="stN1" value="${esc(names[1] || '')}"></div></div>
@@ -3333,7 +3352,7 @@ function openSettings(first) {
   hSel.addEventListener('change', () => { sync(); if (auto || !has) { rate.value = ''; getRate(false); } });
   rate.addEventListener('input', () => { auto = false; });
   $('#stRateGet').onclick = () => getRate(true);
-  el.addEventListener('click', e => { if (e.target.closest('[data-sx]')) closeSettings(); if (e.target.closest('[data-back]')) { const r = tripsReg(), t = r.list.find(t => t.id === r.active) || r.list[r.list.length - 1]; if (t) openTrip(t.id, true); } });
+  el.addEventListener('click', e => { const lp = e.target.closest('[data-lookpick]'); if (lp) { look = lp.dataset.lookpick; for (const b of el.querySelectorAll('[data-lookpick]')) b.setAttribute('aria-checked', b === lp); applyLook(look); return; } if (e.target.closest('[data-sx]')) closeSettings(); if (e.target.closest('[data-back]')) { const r = tripsReg(), t = r.list.find(t => t.id === r.active) || r.list[r.list.length - 1]; if (t) openTrip(t.id, true); } });
   el.addEventListener('change', e => { if (e.target.classList.contains('tripImport')) importTripFile(e.target); });
   el.querySelector('form').addEventListener('submit', e => {
     e.preventDefault();
@@ -3342,7 +3361,7 @@ function openSettings(first) {
     const rv = parseFloat(String(rate.value).replace(',', '.'));
     if (rate.value.trim() && !(rv > 0 && rv < 1e6)) { rate.focus(); toast('Enter the rate as a number, or leave it empty.'); return; }
     const me = $('#stMe').value.trim().slice(0, 24), country = has ? cc : cSel.value, c = COUNTRIES[country];
-    local.settings = { ...local.settings, me, country, home: hSel.value, rate: rv > 0 ? rv : 0, title: $('#stTitle').value.trim().slice(0, 60) || c.sample.title.replace(/\d{4}$/, s.slice(0, 4)), start: s, end: en, names: [$('#stN0').value.trim().slice(0, 24) || me || 'Me', $('#stN1').value.trim().slice(0, 24) || 'Partner'], seen: true, at: Date.now() };
+    local.settings = { ...local.settings, me, country, look, home: hSel.value, rate: rv > 0 ? rv : 0, title: $('#stTitle').value.trim().slice(0, 60) || c.sample.title.replace(/\d{4}$/, s.slice(0, 4)), start: s, end: en, names: [$('#stN0').value.trim().slice(0, 24) || me || 'Me', $('#stN1').value.trim().slice(0, 24) || 'Partner'], seen: true, at: Date.now() };
     S.meId = me ? 'n:' + me : 'local'; saveLocal(); noteTrip();
     // a new trip or the next country starts clean: the map, phrases and money all follow the country
     if (first && others) { location.reload(); return; }

@@ -61,6 +61,10 @@
   --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.94 0 0 0 0 0.9 0 0 0 0 0.8 0.62 0 0 0 -0.31'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url%28%23n%29'/%3E%3C/svg%3E");
   --stamp-blend:normal; color-scheme:dark;
 }
+/* The other looks a trip can wear (chosen in Trip settings; Ochre is the default above and follows day and night).
+   Paper white and Stone are always light, Indigo is the night palette held all day (it sets data-theme="dark"). */
+:root[data-look="white"]{--paper:#ffffff;--surface:#f8f8f5;--sunk:#eeede8;--red-tint:#f8dfd5;--blue-tint:#e3e6f3;--yellow-tint:#f1e6c2;--on-blue:#ffffff;--land:#faf9f5;--rail:#b3aea2;--grain:none}
+:root[data-look="stone"]{--paper:#e4e5e2;--surface:#f2f3f0;--sunk:#d5d7d3;--red-tint:#efd4c9;--blue-tint:#d6d9e6;--yellow-tint:#e6dcb6;--on-blue:#f2f3f0;--land:#eff0ec;--rail:#9d9e98;--grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.2 0 0 0 0 0.2 0 0 0 0 0.2 1.2 0 0 0 -0.53'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url%28%23n%29'/%3E%3C/svg%3E")}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;background:var(--grain),var(--paper);color:var(--ink);font:500 15px/1.45 var(--font);-webkit-font-smoothing:antialiased;overflow:hidden}
@@ -176,6 +180,11 @@ textarea.input{resize:vertical;min-height:88px;line-height:1.5}
 .show .accent{height:12px;background:var(--kc,var(--red));width:96px}
 .sugg-note{padding:10px 12px;font:500 13px/1.4 var(--font);color:var(--ink-2)}
 .dlg .row2{display:flex;gap:8px}.dlg .row2 .input{flex:1;min-width:0}.dlg .row2 .btn{flex:none}
+.looks{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.look{appearance:none;display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 10px;border:1.5px solid var(--ink);background:var(--surface);color:var(--ink);font:700 13px/1.2 var(--font);text-align:left;cursor:pointer}
+.look[aria-checked="true"]{background:var(--ink);color:var(--paper)}
+.look-sw{flex:none;width:26px;height:26px;border:1.5px solid var(--ink)}
+.look[aria-checked="true"] .look-sw{border-color:var(--paper)}
 .hint{display:block;font:500 12px/1.45 var(--font);color:var(--ink-2)}
 .dlg select.input:disabled{opacity:.7}
 .stampbook.postcards{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}.stampbook.postcards .stamp{max-width:170px}
