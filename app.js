@@ -1018,6 +1018,8 @@ function normSpend(id, d) {
   return { id, amount: numv(d.amount) > 0 ? roundL(d.amount) : 0, cat: CATS[d.cat] ? d.cat : 'other', payer: d.payer === 1 ? 1 : 0,
     date: isIso(d.date) ? d.date : today(), note: str(d.note).slice(0, 120), by: str(d.by), at: numv(d.at) || 0 };
 }
+// Android phones use Chrome and their own share sheet, so a few instructions name them instead of Safari
+const ANDROID = /Android/i.test(navigator.userAgent), BROWSER = ANDROID ? 'Chrome' : 'Safari';
 /* ---------- looks: the colour themes a trip can wear. sw is the swatch (paper, ink); theme pins day or night; bar is the phone's status bar ---------- */
 const LOOKS = {
   ochre: { name: 'Ochre', sw: ['#eadfbe', '#1b1d2e'], theme: '', bar: '' },
@@ -3025,7 +3027,7 @@ function drawListIntro(miss) {
   const el = $('#gmScrim'); if (!el) return;
   el.innerHTML = `<div class="dlg" role="dialog" aria-label="Import from Google Maps"><div class="dlg-h"><h2>Import from Google Maps</h2><button class="iconbtn" type="button" data-gx aria-label="Close">${icon('x')}</button></div>
     <div class="dlg-b"><p class="gm-p">Bring in one of your <b>Saved</b> lists, or a list somebody shared with you. Every place is added as a maybe and pinned on the map, ready to plan.</p>
-      <ol class="gm-steps"><li>In Google Maps, open the list, tap <b>Share</b> and copy its link.</li><li>Paste the link into <b>Safari's address bar</b>, so the list opens in Safari and not in the Google Maps app.</li><li>Tap your <b>Add to Waymark</b> bookmark, then <b>Copy for Waymark</b>.</li><li>Come back here and tap <b>Paste the list</b>.</li></ol>
+      <ol class="gm-steps"><li>In Google Maps, open the list, tap <b>Share</b> and copy its link.</li><li>Paste the link into <b>${BROWSER}'s address bar</b>, so the list opens in ${BROWSER} and not in the Google Maps app.</li><li>${ANDROID ? 'Type <b>Add to Waymark</b> in the address bar and tap the bookmark with that name' : 'Tap your <b>Add to Waymark</b> bookmark'}, then <b>Copy for Waymark</b>.</li><li>Come back here and tap <b>Paste the list</b>.</li></ol>
       <div class="acts"><button class="btn btn-primary" type="button" id="gmPaste">${icon('clip')}Paste the list</button><label class="btn">${icon('upload')}Choose a file<input type="file" class="gmFile" accept=".csv,.json,.kml,text/csv,application/json,application/vnd.google-earth.kml+xml" hidden></label></div>
       <textarea class="input" id="gmBox" rows="3" ${miss === 'box' ? '' : 'hidden'} aria-label="Paste the list here" placeholder="Tap and hold here, then tap Paste."></textarea>
       <div class="pastenote miss" role="status" ${miss && miss !== 'box' ? '' : 'hidden'}>${miss && miss !== 'box' ? esc(miss) : ''}</div>
@@ -3366,7 +3368,7 @@ async function saveKeepsake() {
   const el = document.createElement('div'); el.className = 'scrim'; el.id = 'kpScrim';
   el.innerHTML = `<div class="dlg" role="dialog" aria-label="Keepsake book" style="width:min(460px,100%)"><div class="dlg-h"><h2>Your keepsake book is ready</h2><button class="iconbtn" type="button" data-kx aria-label="Close">${icon('x')}</button></div>
     <div class="dlg-b"><p class="gm-p"><b>${esc(title)}</b>: a cover and ${r.pages} photo page${r.pages === 1 ? '' : 's'}, each with its place and date, sized for a 20 × 15 cm landscape photo book. Made on this device and not sent anywhere.</p>
-    <ol class="kp-steps"><li>Tap <b>Save the pages</b>, then <b>Save ${pics.length} Images</b>.</li><li>In Popsa, or any photo book app, start a landscape book and pick those pictures from your photos.</li><li>Give each one a full page of its own, in the order of the small number at the foot of the page. The first picture is the cover.</li>${more ? `<li>Most books need ${KP.MIN} pages. Add ${more} more photo${more === 1 ? '' : 's'} to your places in Waymark and make the book again, or add them in the photo book app.</li>` : ''}</ol>
+    <ol class="kp-steps"><li>Tap <b>Save the pages</b>, then ${ANDROID ? 'choose <b>Photos</b> or <b>Files</b> to keep them' : `<b>Save ${pics.length} Images</b>`}.</li><li>In Popsa, or any photo book app, start a landscape book and pick those pictures from your photos.</li><li>Give each one a full page of its own, in the order of the small number at the foot of the page. The first picture is the cover.</li>${more ? `<li>Most books need ${KP.MIN} pages. Add ${more} more photo${more === 1 ? '' : 's'} to your places in Waymark and make the book again, or add them in the photo book app.</li>` : ''}</ol>
     <p class="fine">Using a printer that takes a finished file, such as Blurb or Mixam? Save the PDF.</p></div>
     <div class="dlg-f"><button class="btn btn-primary" type="button" data-ki>${icon('upload')}Save the pages</button><button class="btn" type="button" data-ks>${icon('doc')}Save the PDF</button></div></div>`;
   el.addEventListener('click', async e => {

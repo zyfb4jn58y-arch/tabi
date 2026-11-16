@@ -25,7 +25,13 @@ Waymark (旅, journey) is an offline trip map for two people travelling together
 3. Open **Waymark** from the home screen. The first screen asks you to import a trip file or set up a new trip.
 4. To import, save the trip file to the Files app, then tap **Import a trip file** and choose it.
 
-Do the import inside the home-screen app, not in Safari. iPhones keep the two separate, so a trip imported in Safari won't appear in the app.
+## Install on Android
+
+1. Open the same address in **Chrome**.
+2. Tap the **three dots** menu, then **Add to Home screen** (some phones say **Install app**), then **Install**.
+3. Open **Waymark** from the home screen or app drawer and set up or import a trip.
+
+On an iPhone, do the import inside the home-screen app, not in Safari. iPhones keep the two separate, so a trip imported in Safari won't appear in the app.
 
 ## Countries
 
