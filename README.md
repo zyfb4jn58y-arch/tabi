@@ -1,6 +1,6 @@
 # Waymark
 
-Waymark (旅, journey) is an offline trip map for two people travelling together. It started as a Japan trip app and now works for 15 countries. It installs on a phone from the browser and works without internet.
+Waymark (旅, journey) is an offline trip map for two people travelling together. It started as a Japan trip app and now works for 36 countries, plus anywhere else without a phrase card. It installs on a phone from the browser and works without internet.
 
 - **Today:** where you're sleeping tonight, what's next with a countdown, and today's spending.
 - **Map:** a detailed street map in Waymark's colours, with streets, buildings, parks, stations and named places, plus your stays, sights, food, craft spots, walks and travel legs, each with its own shape and colour. Search the map from the bar at the top: it finds your own places first, then towns and sights (Japan's list works offline), then shops, stations and anything else on OpenStreetMap when you're online. Pick a result to fly there and add it to the trip in one tap. You can replay the route with Play the trip. Areas you have looked at keep working offline, and **Save maps for offline** in the ⋯ menu saves the areas around all your places. With no internet and nothing saved, Waymark falls back to its simple map.
@@ -31,7 +31,7 @@ Do the import inside the home-screen app, not in Safari. iPhones keep the two se
 
 When you set up a new trip, pick the country. It sets the phrases, the local currency, the local-language name and address fields (for taxis), the keepsake book and where the map starts. Choose your home money too, and Waymark fills in today's exchange rate when you're online (you can type your own).
 
-Japan, South Korea, Taiwan, Thailand, Vietnam, Indonesia, Italy, France, Spain, Portugal, Greece, Germany, the United Kingdom, the United States and New Zealand are included. The country is fixed once a trip has places in it. A trip file carries its country, so the other phone matches.
+Included: Argentina, Australia, Austria, Brazil, Canada, Croatia, Czechia, Denmark, Fiji, France, Germany, Greece, Iceland, Indonesia, Ireland, Italy, Japan, Malaysia, Mexico, the Netherlands, New Zealand, Norway, Peru, the Philippines, Portugal, Singapore, South Korea, Spain, Sweden, Switzerland, Taiwan, Thailand, Turkey, the United Kingdom, the United States and Vietnam. Going somewhere not listed? Pick **Somewhere else** at the foot of the list and choose the local money. Everything works except the phrase card. The country is fixed once a trip has places in it. A trip file carries its country, so the other phone matches.
 
 Japan has an offline place list for search. Elsewhere, searching for a place needs the internet (it uses OpenStreetMap through Photon), and you can always pick a spot on the map instead.
 

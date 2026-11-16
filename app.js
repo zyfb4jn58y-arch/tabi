@@ -166,7 +166,7 @@ const TP = (() => {
   }
   // amounts in any currency Waymark knows. Yen and Australian dollars read exactly as they always have;
   // a bare $ is the trip's own dollar, else the home dollar. 1.234,50 € and €1,234.50 both read as 1234.5.
-  const DOLLARS = ['AUD', 'USD', 'NZD', 'CAD', 'SGD'];
+  const DOLLARS = ['AUD', 'USD', 'NZD', 'CAD', 'SGD', 'FJD', 'HKD'];
   const localCur = () => typeof COUNTRY === 'function' ? COUNTRY().cur : 'JPY';
   const homeCur = () => typeof S !== 'undefined' && S.settings && S.settings.home || 'AUD';
   const amt = s => { const t = String(s).replace(/[\s  ]/g, ''), m = /^(.*?)[.,](\d{1,2})$/.exec(t); return m ? +(m[1].replace(/[.,]/g, '') + '.' + m[2]) : +t.replace(/[.,]/g, ''); };
@@ -184,7 +184,7 @@ const TP = (() => {
     ];
     if (typeof CUR === 'object') for (const [code, c] of Object.entries(CUR)) {
       if (code === 'JPY' || code === 'AUD') continue;
-      for (const sym of c.re) {
+      for (const sym of [...c.re, ...(code === localCur() && c.loc || [])]) {
         if (sym === '$') continue;
         const e = escRe(sym), word = /^[A-Za-z]/.test(sym) ? '(?<![A-Za-z])' : '', end = /[A-Za-z]$/.test(sym) ? '(?![A-Za-z])' : '';
         list.push([new RegExp(`${word}${e}\\s?${NUM}`, 'gi'), code], [new RegExp(`${NUM}\\s?${e}${end}`, 'gi'), code]);
@@ -386,7 +386,38 @@ const CUR = {
   NZD: { name: 'NZ dollars', pre: 'NZ$', dec: 2, re: ['NZ$', 'NZD', '$'] },
   AUD: { name: 'Australian dollars', pre: 'A$', dec: 2, re: ['A$', 'AU$', 'AUD', '$'] },
   CAD: { name: 'Canadian dollars', pre: 'C$', dec: 2, re: ['C$', 'CAD', '$'] },
-  SGD: { name: 'Singapore dollars', pre: 'S$', dec: 2, re: ['S$', 'SGD', '$'] }
+  SGD: { name: 'Singapore dollars', pre: 'S$', dec: 2, re: ['S$', 'SGD', '$'] },
+  // Added with the later countries. `re` is matched in every trip's booking text, so it holds only marks that can't be
+  // mistaken for anything else; `loc` holds the everyday marks (kr, R, Rs) and is matched only on a trip to that country.
+  MXN: { name: 'Mexican pesos', pre: 'MX$', dec: 2, re: ['MX$', 'MXN'] },
+  ARS: { name: 'Argentine pesos', pre: 'AR$', dec: 0, re: ['AR$', 'ARS'] },
+  PEN: { name: 'Soles', pre: 'S/ ', dec: 2, re: ['PEN'], loc: ['S/'] },
+  BRL: { name: 'Reais', pre: 'R$', dec: 2, re: ['R$', 'BRL'] },
+  TRY: { name: 'Lira', pre: '₺', dec: 2, re: ['₺', 'TRY'], loc: ['TL'] },
+  CHF: { name: 'Swiss francs', pre: 'CHF ', dec: 2, re: ['CHF'], loc: ['Fr.'] },
+  CZK: { name: 'Koruna', pre: 'Kč ', dec: 0, re: ['Kč', 'CZK'] },
+  MYR: { name: 'Ringgit', pre: 'RM', dec: 2, re: ['MYR'], loc: ['RM'] },
+  PHP: { name: 'Philippine pesos', pre: '₱', dec: 2, re: ['₱', 'PHP'] },
+  ISK: { name: 'Icelandic krónur', pre: 'ISK ', dec: 0, re: ['ISK'], loc: ['kr'] },
+  NOK: { name: 'Norwegian kroner', pre: 'NOK ', dec: 0, re: ['NOK'], loc: ['kr'] },
+  SEK: { name: 'Swedish kronor', pre: 'SEK ', dec: 0, re: ['SEK'], loc: ['kr'] },
+  DKK: { name: 'Danish kroner', pre: 'DKK ', dec: 0, re: ['DKK'], loc: ['kr'] },
+  FJD: { name: 'Fiji dollars', pre: 'FJ$', dec: 2, re: ['FJ$', 'FJD', '$'] },
+  // not tied to a listed country yet: offered as the local money for a trip to Somewhere else
+  CNY: { name: 'Chinese yuan', pre: 'CN¥', dec: 2, re: ['CN¥', 'CNY', 'RMB'] },
+  HKD: { name: 'Hong Kong dollars', pre: 'HK$', dec: 2, re: ['HK$', 'HKD', '$'] },
+  INR: { name: 'Indian rupees', pre: '₹', dec: 0, re: ['₹', 'INR'], loc: ['Rs'] },
+  LKR: { name: 'Sri Lankan rupees', pre: 'LKR ', dec: 0, re: ['LKR'], loc: ['Rs'] },
+  NPR: { name: 'Nepalese rupees', pre: 'NPR ', dec: 0, re: ['NPR'], loc: ['Rs'] },
+  KHR: { name: 'Riel', pre: 'KHR ', dec: 0, re: ['៛', 'KHR'] },
+  EGP: { name: 'Egyptian pounds', pre: 'E£', dec: 2, re: ['E£', 'EGP'] },
+  MAD: { name: 'Dirham (Morocco)', pre: 'MAD ', dec: 2, re: ['MAD'], loc: ['DH'] },
+  AED: { name: 'Dirham (UAE)', pre: 'AED ', dec: 2, re: ['AED'], loc: ['Dhs'] },
+  JOD: { name: 'Jordanian dinar', pre: 'JOD ', dec: 2, re: ['JOD'], loc: ['JD'] },
+  ILS: { name: 'Shekels', pre: '₪', dec: 2, re: ['₪', 'ILS'] },
+  ZAR: { name: 'Rand', pre: 'R ', dec: 2, re: ['ZAR'], loc: ['R'] },
+  PLN: { name: 'Złoty', pre: 'PLN ', dec: 2, re: ['zł', 'PLN'] },
+  HUF: { name: 'Forint', pre: 'HUF ', dec: 0, re: ['HUF'], loc: ['Ft'] }
 };
 // where the travellers come from: the currency they think in
 const HOMES = ['AUD', 'NZD', 'USD', 'GBP', 'EUR', 'CAD', 'SGD'];
@@ -579,7 +610,212 @@ const COUNTRIES = {
     ]
   }
 };
-const COUNTRY_LIST = Object.entries(COUNTRIES).map(([code, c]) => ({ code, name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
+/* ---------- more countries ----------
+   Added after the first fifteen. Each has the same parts as the ones above. PH builds the usual four-part phrase
+   card. Countries that share a language share a card: Latin American Spanish for Mexico, Argentina and Peru, and
+   the German card for Austria and Switzerland with their own greetings. None of these phrase cards has been
+   checked by a native speaker yet. */
+const PH = (basics, around, eating, staying) => [BASIC(...basics), ['Getting around', around], ['Eating', eating], ['Staying', staying]];
+const POSTCARD = 'Every place you visit becomes a postcard in this stack.', PATCH = 'Like the embroidered patches sold at every national park, each place you visit earns one.';
+const TAKE_US = ['Please take us here', 'Please take us to this address'];
+const LATAM = PH(
+  [['Hello', 'Hola', 'OH-lah'], ['Thank you very much', 'Muchas gracias', 'MOO-chas GRAH-syahs'], ['Excuse me, sorry', 'Disculpe', 'dees-KOOL-peh'], ["I don't speak Spanish", 'No hablo español', 'noh AH-bloh es-pahn-YOL']],
+  [['Where is the station?', '¿Dónde está la estación?', 'DON-deh es-TAH lah es-tah-SYON?'], ['Please take me to this address', 'A esta dirección, por favor', 'ah ES-tah dee-rek-SYON, por fah-VOR'], ['Two tickets, please', 'Dos boletos, por favor', 'dos boh-LEH-tos, por fah-VOR'], ['How much is it?', '¿Cuánto cuesta?', 'KWAN-toh KWES-tah?']],
+  [['A table for two, please', 'Una mesa para dos, por favor', 'OO-nah MEH-sah PAH-rah dos'], ['This one, please', 'Este, por favor', 'ES-teh, por fah-VOR'], ['The bill, please', 'La cuenta, por favor', 'lah KWEN-tah, por fah-VOR'], ['Can I pay by card?', '¿Puedo pagar con tarjeta?', 'PWEH-doh pah-GAR kon tar-HEH-tah?'], ['Delicious!', '¡Muy rico!', 'mwee REE-koh']],
+  [['We have a reservation', 'Tenemos una reserva', 'teh-NEH-mos OO-nah reh-SER-vah'], ['Could you keep our luggage?', '¿Nos puede guardar el equipaje?', 'nos PWEH-deh gwar-DAR el eh-kee-PAH-heh?'], ['What time is check-out?', '¿A qué hora es el check-out?', 'ah keh OH-rah es el check-out?']]);
+const LATAM_DRIVER = ['Please take us here', 'A esta dirección, por favor'];
+const GERMAN = (hello, thanks, extra) => [BASIC(hello, thanks, COUNTRIES.DE.phrases[0][1][2], COUNTRIES.DE.phrases[0][1][3]), ...COUNTRIES.DE.phrases.slice(1), ...(extra ? [extra] : [])];
+Object.assign(COUNTRIES, {
+  AU: {
+    name: 'Australia', cur: 'AUD', lang: 'en', langName: '', font: '', book: 'patches', bbox: [112.9, -43.7, 153.7, -10.6], words: true,
+    sample: { local: '', addr: '', price: '220', title: 'Australia 2027' }, bookNote: PATCH, driver: TAKE_US,
+    phrases: [
+      ['Good to know', [['Tipping', 'Not expected', 'Round up for great service'], ['Paying', 'Tap a card almost everywhere', 'Some places add a small card surcharge'], ['Emergency', 'Call 000', 'Police, fire and ambulance'], ['Sun', 'Strong all year', 'Hat and sunscreen, even on cloudy days']]],
+      ['Getting around', [['Driving', 'On the left', 'Distances between towns are long'], ['City transport', 'A tap card in each city', 'Opal in Sydney, myki in Melbourne, go card in Brisbane'], ['Swimming', 'Between the red and yellow flags', 'That is where the lifesavers watch']]],
+      ['Words visitors ask about', [['Afternoon', 'Arvo', '"See you this arvo"'], ['Service station', 'Servo', 'Fuel and snacks'], ['Bottle shop', 'Bottle-o', 'Most supermarkets do not sell alcohol'], ['Flip-flops', 'Thongs', 'Worn on your feet']]]
+    ]
+  },
+  CA: {
+    name: 'Canada', cur: 'CAD', lang: 'en', langName: '', font: '', book: 'patches', bbox: [-141.0, 41.7, -52.6, 70.0], words: true,
+    sample: { local: '', addr: '', price: '220', title: 'Canada 2027' }, bookNote: PATCH, driver: TAKE_US,
+    phrases: [
+      ['Words that differ', [['Toilet', 'Washroom', '"Where\'s the washroom?"'], ['Beanie', 'Toque', 'Said "took"'], ['One and two dollar coins', 'Loonie and toonie', 'Handy for parking and laundry'], ['Sales tax', 'Added at the till', 'Shelf prices leave it out']]],
+      ['Eating', [['Tipping', '15 to 20 percent', 'Expected at sit-down restaurants and bars'], ['Takeaway', 'To go, or take-out', '"For here or to go?"'], ['Hot chips', 'Fries', 'Chips are potato chips']]],
+      ['French in Quebec', [['Hello', 'Bonjour', 'bon-ZHOOR'], ['Thank you', 'Merci', 'mehr-SEE'], ['Excuse me, sorry', 'Excusez-moi', 'ex-kew-zay MWAH'], ['Do you speak English?', 'Parlez-vous anglais ?', 'par-lay voo ahn-GLEH?'], ['The bill, please', "L'addition, s'il vous plaît", 'lah-dee-SYON, seel voo PLEH']]]
+    ]
+  },
+  IE: {
+    name: 'Ireland', cur: 'EUR', lang: 'en', langName: '', font: '', book: 'postcards', bbox: [-10.6, 51.4, -5.9, 55.4], words: true,
+    sample: { local: '', addr: '', price: '160', title: 'Ireland 2027' }, bookNote: POSTCARD, driver: TAKE_US,
+    phrases: [
+      ['Words that differ', [['Fun, good company', 'Craic', 'Said "crack"'], ['Thanks', 'Cheers, or thanks a million', 'Heard everywhere'], ['Police', 'Gardaí', 'Said "gar-DEE"; one officer is a garda'], ['Bottle shop', 'Off-licence', 'Same as in the UK']]],
+      ['Irish on signs', [['Hello', 'Dia dhuit', 'DEE-ah gwit'], ['Thank you', 'Go raibh maith agat', 'guh rev mah AH-gut'], ['Cheers', 'Sláinte', 'SLAWN-cheh'], ['Men / Women (toilets)', 'Fir / Mná', 'fir / mnaw']]],
+      ['Getting around', [['Tipping', 'About 10 percent', 'For table service; not expected at the bar'], ['City transport card', 'Leap card', 'For buses, trams and trains in Dublin']]]
+    ]
+  },
+  SG: {
+    name: 'Singapore', cur: 'SGD', lang: 'en', langName: '', font: '', book: 'postcards', bbox: [103.6, 1.2, 104.1, 1.5], words: true,
+    sample: { local: '', addr: '', price: '260', title: 'Singapore 2027' }, bookNote: POSTCARD, driver: TAKE_US,
+    phrases: [
+      ['Words that differ', [['Takeaway', 'Dabao', '"Having here or dabao?"'], ['Save a table', 'Chope', 'A tissue packet on a hawker table means it is taken'], ['Iced coffee with milk', 'Kopi peng', 'Kopi O is black with sugar'], ['Yes, no problem', 'Can', '"Can" is a full answer']]],
+      ['Eating', [['Hawker centre', 'A hall of food stalls', 'Order and pay at the stall, then find a seat'], ['Tipping', 'Not expected', 'Restaurants add a 10 percent service charge'], ['Finished eating', 'Return your tray', 'It is required at hawker centres']]],
+      ['Getting around', [['Train', 'MRT', 'Tap a bank card at the gate'], ['On trains', 'No eating or drinking', 'Fines apply'], ['Chewing gum', 'Not sold', 'Leave it at home']]]
+    ]
+  },
+  FJ: {
+    name: 'Fiji', cur: 'FJD', lang: 'en', langName: '', font: '', book: 'postcards', bbox: [176.8, -19.3, 180.0, -16.0], words: true,
+    sample: { local: '', addr: '', price: '450', title: 'Fiji 2027' }, bookNote: POSTCARD, driver: TAKE_US,
+    phrases: [
+      ['Fijian greetings', [['Hello', 'Bula', 'BOO-lah'], ['Thank you', 'Vinaka', 'vee-NAH-kah'], ['Thank you very much', 'Vinaka vaka levu', 'vee-NAH-kah VAH-kah LEH-voo'], ['Goodbye', 'Moce', 'MOH-theh'], ['Yes / No', 'Io / Sega', 'EE-oh / SENG-ah']]],
+      ['Good to know', [['Visiting a village', 'Bring a gift of kava', 'Cover shoulders and knees, and take off your hat'], ['Tipping', 'Not expected', 'Many resorts have a staff fund instead'], ['Fiji time', 'Things run slowly', 'Allow extra time for transfers'], ['Sunday', 'A quiet day', 'Many shops close']]]
+    ]
+  },
+  MX: {
+    name: 'Mexico', cur: 'MXN', lang: 'es', langName: 'Spanish', font: '', book: 'postcards', bbox: [-118.4, 14.5, -86.7, 32.7],
+    sample: { local: 'Palacio de Bellas Artes', addr: 'Av. Juárez s/n, Centro Histórico, 06050 Ciudad de México', price: '1800', title: 'Mexico 2027' },
+    bookNote: POSTCARD, driver: LATAM_DRIVER, phrases: LATAM
+  },
+  AR: {
+    name: 'Argentina', cur: 'ARS', lang: 'es', langName: 'Spanish', font: '', book: 'postcards', bbox: [-73.6, -55.1, -53.6, -21.8],
+    sample: { local: 'Teatro Colón', addr: 'Cerrito 628, C1010 Buenos Aires', price: '90000', title: 'Argentina 2027' },
+    bookNote: POSTCARD, driver: LATAM_DRIVER, phrases: LATAM
+  },
+  PE: {
+    name: 'Peru', cur: 'PEN', lang: 'es', langName: 'Spanish', font: '', book: 'postcards', bbox: [-81.4, -18.4, -68.7, -0.1],
+    sample: { local: 'Machu Picchu', addr: 'Aguas Calientes 08681, Cusco', price: '380', title: 'Peru 2027' },
+    bookNote: POSTCARD, driver: LATAM_DRIVER, phrases: LATAM
+  },
+  BR: {
+    name: 'Brazil', cur: 'BRL', lang: 'pt', langName: 'Portuguese', font: '', book: 'postcards', bbox: [-74.0, -33.8, -34.8, 5.3],
+    sample: { local: 'Cristo Redentor', addr: 'Parque Nacional da Tijuca, Alto da Boa Vista, Rio de Janeiro - RJ', price: '600', title: 'Brazil 2027' },
+    bookNote: POSTCARD, driver: ['Please take us here', 'Para este endereço, por favor'],
+    phrases: PH(
+      [['Hello', 'Olá', 'oh-LAH'], ['Thank you (said by a man / a woman)', 'Obrigado / Obrigada', 'oh-bree-GAH-doo / oh-bree-GAH-dah'], ['Excuse me, sorry', 'Desculpe', 'jis-KOOL-pee'], ["I don't speak Portuguese", 'Não falo português', 'nown FAH-loo por-too-GAYS']],
+      [['Where is the station?', 'Onde fica a estação?', 'ON-jee FEE-kah ah es-tah-SOWN?'], ['Please take me to this address', 'Para este endereço, por favor', 'PAH-rah ES-chee en-deh-REH-soo, por fah-VOR'], ['Two tickets, please', 'Duas passagens, por favor', 'DOO-ahs pah-SAH-zhayns, por fah-VOR'], ['How much is it?', 'Quanto custa?', 'KWAN-too KOOS-tah?']],
+      [['A table for two, please', 'Uma mesa para dois, por favor', 'OO-mah MEH-zah PAH-rah doys'], ['This one, please', 'Este, por favor', 'ES-chee, por fah-VOR'], ['The bill, please', 'A conta, por favor', 'ah KON-tah, por fah-VOR'], ['Can I pay by card?', 'Posso pagar com cartão?', 'POS-soo pah-GAR kon kar-TOWN?'], ['That was delicious', 'Estava delicioso', 'es-TAH-vah deh-lee-see-OH-zoo']],
+      [['We have a reservation', 'Temos uma reserva', 'TEH-moos OO-mah heh-ZEHR-vah'], ['Could you keep our luggage?', 'Pode guardar a nossa bagagem?', 'PAW-jee gwar-DAR ah NOS-sah bah-GAH-zhayn?'], ['What time is check-out?', 'Que horas é o check-out?', 'kee OR-ahs eh oo check-out?']])
+  },
+  TR: {
+    name: 'Turkey', cur: 'TRY', lang: 'tr', langName: 'Turkish', font: '', book: 'postcards', bbox: [26.0, 35.8, 44.8, 42.1],
+    sample: { local: 'Ayasofya', addr: 'Sultan Ahmet, Ayasofya Meydanı No:1, 34122 Fatih/İstanbul', price: '3500', title: 'Turkey 2027' },
+    bookNote: POSTCARD, driver: ['Please take us here', 'Bu adrese lütfen'],
+    phrases: PH(
+      [['Hello', 'Merhaba', 'MEHR-hah-bah'], ['Thank you', 'Teşekkür ederim', 'teh-shek-KEWR eh-deh-rim'], ['Excuse me, sorry', 'Affedersiniz', 'ahf-feh-DEHR-see-niz'], ["I don't speak Turkish", 'Türkçe bilmiyorum', 'TEWRK-cheh BIL-mee-yoh-room']],
+      [['Where is the station?', 'İstasyon nerede?', 'is-tahs-YON NEH-reh-deh?'], ['Please take me to this address', 'Bu adrese lütfen', 'boo ah-dreh-SEH LEWT-fen'], ['Two tickets, please', 'İki bilet lütfen', 'ee-KEE bee-LET LEWT-fen'], ['How much is it?', 'Ne kadar?', 'neh kah-DAR?']],
+      [['A table for two, please', 'İki kişilik bir masa lütfen', 'ee-KEE kee-shee-LIK beer mah-SAH LEWT-fen'], ['This one, please', 'Bundan lütfen', 'boon-DAHN LEWT-fen'], ['The bill, please', 'Hesap lütfen', 'heh-SAHP LEWT-fen'], ['Can I pay by card?', 'Kartla ödeyebilir miyim?', 'kart-LAH ur-deh-yeh-bee-LEER mee-yim?'], ['Delicious!', 'Çok lezzetli!', 'chok lez-zet-LEE']],
+      [['We have a reservation', 'Rezervasyonumuz var', 'reh-zehr-vahs-yoh-noo-MOOZ var'], ['Could you keep our luggage?', 'Bavullarımızı bırakabilir miyiz?', 'bah-vool-lah-rih-mih-ZIH bih-rah-kah-bee-LEER mee-yiz?'], ['What time is check-out?', 'Çıkış saat kaçta?', 'chih-KISH sah-AHT kahch-TAH?']])
+  },
+  NL: {
+    name: 'Netherlands', cur: 'EUR', lang: 'nl', langName: 'Dutch', font: '', book: 'postcards', bbox: [3.3, 50.7, 7.2, 53.6],
+    sample: { local: 'Rijksmuseum', addr: 'Museumstraat 1, 1071 XX Amsterdam', price: '160', title: 'Netherlands 2027' },
+    bookNote: POSTCARD, driver: ['Please take us here', 'Naar dit adres, alstublieft'],
+    phrases: PH(
+      [['Hello', 'Hallo', 'HAH-loh'], ['Thank you very much', 'Dank u wel', 'dahnk oo vel'], ['Excuse me, sorry', 'Pardon', 'par-DON'], ["I don't speak Dutch", 'Ik spreek geen Nederlands', 'ik sprayk khayn NAY-der-lahnts']],
+      [['Where is the station?', 'Waar is het station?', 'vahr is het stah-SHON?'], ['Please take me to this address', 'Naar dit adres, alstublieft', 'nahr dit ah-DRES, AHL-stoo-bleeft'], ['Two tickets, please', 'Twee kaartjes, alstublieft', 'tvay KAHRT-yes, AHL-stoo-bleeft'], ['How much is it?', 'Hoeveel kost het?', 'HOO-vayl kost het?']],
+      [['A table for two, please', 'Een tafel voor twee, alstublieft', 'ayn TAH-fel vohr tvay'], ['This one, please', 'Deze, alstublieft', 'DAY-zeh, AHL-stoo-bleeft'], ['The bill, please', 'De rekening, alstublieft', 'deh RAY-keh-ning, AHL-stoo-bleeft'], ['Can I pay by card?', 'Kan ik pinnen?', 'kahn ik PIN-nen?'], ['Delicious!', 'Heerlijk!', 'HAYR-lik']],
+      [['We have a reservation', 'We hebben gereserveerd', 'veh HEB-ben kheh-ray-zer-VAYRT'], ['Could you keep our luggage?', 'Kunnen we onze bagage hier laten?', 'KUN-nen veh ON-zeh bah-KHAH-zheh heer LAH-ten?'], ['What time is check-out?', 'Hoe laat is het uitchecken?', 'hoo laht is het OWT-chek-ken?']])
+  },
+  AT: {
+    name: 'Austria', cur: 'EUR', lang: 'de', langName: 'German', font: '', book: 'postcards', bbox: [9.5, 46.4, 17.2, 49.0],
+    sample: { local: 'Schloss Schönbrunn', addr: 'Schönbrunner Schloßstraße 47, 1130 Wien', price: '150', title: 'Austria 2027' },
+    bookNote: POSTCARD, driver: COUNTRIES.DE.driver,
+    phrases: GERMAN(['Hello', 'Grüß Gott', 'grews got'], ['Thank you very much', 'Danke schön', 'DAHN-keh shurn'])
+  },
+  CH: {
+    name: 'Switzerland', cur: 'CHF', lang: 'de', langName: 'German', font: '', book: 'postcards', bbox: [5.9, 45.8, 10.5, 47.8],
+    sample: { local: 'Kapellbrücke', addr: 'Kapellbrücke, 6002 Luzern', price: '220', title: 'Switzerland 2027' },
+    bookNote: POSTCARD, driver: COUNTRIES.DE.driver,
+    phrases: GERMAN(['Hello (German-speaking part)', 'Grüezi', 'GREW-eh-tsee'], ['Thank you very much', 'Merci vielmal', 'MEHR-see FEEL-mahl'],
+      ['In the French and Italian parts', [['Hello (Geneva, Lausanne)', 'Bonjour', 'bon-ZHOOR'], ['Thank you', 'Merci', 'mehr-SEE'], ['Hello (Lugano, Ticino)', 'Buongiorno', 'bwon-JOR-noh'], ['Thank you', 'Grazie', 'GRAHT-see-eh']]])
+  },
+  HR: {
+    name: 'Croatia', cur: 'EUR', lang: 'hr', langName: 'Croatian', font: '', book: 'postcards', bbox: [13.4, 42.3, 19.5, 46.6],
+    sample: { local: 'Dioklecijanova palača', addr: 'Dioklecijanova ul. 1, 21000 Split', price: '120', title: 'Croatia 2027' },
+    bookNote: POSTCARD, driver: ['Please take us here', 'Na ovu adresu, molim'],
+    phrases: PH(
+      [['Hello, good day', 'Dobar dan', 'DOH-bar dahn'], ['Thank you', 'Hvala', 'HVAH-lah'], ['Excuse me, sorry', 'Oprostite', 'oh-PROS-tee-teh'], ["I don't speak Croatian", 'Ne govorim hrvatski', 'neh GOH-voh-reem HR-vaht-skee']],
+      [['Where is the station?', 'Gdje je kolodvor?', 'gdyeh yeh KOH-loh-dvor?'], ['Please take me to this address', 'Na ovu adresu, molim', 'nah OH-voo ah-DREH-soo, MOH-leem'], ['Two tickets, please', 'Dvije karte, molim', 'DVEE-yeh KAR-teh, MOH-leem'], ['How much is it?', 'Koliko košta?', 'KOH-lee-koh KOSH-tah?']],
+      [['A table for two, please', 'Stol za dvoje, molim', 'stol zah DVOY-eh, MOH-leem'], ['This one, please', 'Ovo, molim', 'OH-voh, MOH-leem'], ['The bill, please', 'Račun, molim', 'RAH-choon, MOH-leem'], ['Can I pay by card?', 'Mogu li platiti karticom?', 'MOH-goo lee PLAH-tee-tee KAR-tee-tsom?'], ['Delicious!', 'Jako ukusno!', 'YAH-koh OO-koos-noh']],
+      [['We have a reservation', 'Imamo rezervaciju', 'EE-mah-moh reh-zer-VAH-tsee-yoo'], ['Could you keep our luggage?', 'Možemo li ostaviti prtljagu?', 'MOH-zheh-moh lee oh-STAH-vee-tee PRT-lyah-goo?'], ['What time is check-out?', 'U koliko sati je odjava?', 'oo KOH-lee-koh SAH-tee yeh OD-yah-vah?']])
+  },
+  CZ: {
+    name: 'Czechia', cur: 'CZK', lang: 'cs', langName: 'Czech', font: '', book: 'postcards', bbox: [12.0, 48.5, 18.9, 51.1],
+    sample: { local: 'Karlův most', addr: 'Karlův most, 110 00 Praha 1', price: '2600', title: 'Czechia 2027' },
+    bookNote: POSTCARD, driver: ['Please take us here', 'Na tuto adresu, prosím'],
+    phrases: PH(
+      [['Hello, good day', 'Dobrý den', 'DOH-bree den'], ['Thank you', 'Děkuji', 'DYEH-koo-yee'], ['Excuse me, sorry', 'Promiňte', 'PROH-min-teh'], ["I don't speak Czech", 'Nemluvím česky', 'NEH-mloo-veem CHES-kee']],
+      [['Where is the station?', 'Kde je nádraží?', 'gdeh yeh NAH-drah-zhee?'], ['Please take me to this address', 'Na tuto adresu, prosím', 'nah TOO-toh AH-dreh-soo, PROH-seem'], ['Two tickets, please', 'Dvě jízdenky, prosím', 'dvyeh YEEZ-den-kee, PROH-seem'], ['How much is it?', 'Kolik to stojí?', 'KOH-lik toh STOH-yee?']],
+      [['A table for two, please', 'Stůl pro dva, prosím', 'stool proh dvah, PROH-seem'], ['This one, please', 'Tohle, prosím', 'TOH-hleh, PROH-seem'], ['The bill, please', 'Účet, prosím', 'OO-chet, PROH-seem'], ['Can I pay by card?', 'Můžu platit kartou?', 'MOO-zhoo PLAH-tit KAR-toh?'], ['Delicious!', 'Výborné!', 'VEE-bor-neh']],
+      [['We have a reservation', 'Máme rezervaci', 'MAH-meh REH-zer-vah-tsee'], ['Could you keep our luggage?', 'Můžeme si tu nechat zavazadla?', 'MOO-zheh-meh see too NEH-khat ZAH-vah-zah-dlah?'], ['What time is check-out?', 'V kolik hodin je check-out?', 'f KOH-lik HOH-din yeh check-out?']])
+  },
+  MY: {
+    name: 'Malaysia', cur: 'MYR', lang: 'ms', langName: 'Malay', font: '', book: 'postcards', bbox: [99.6, 0.8, 119.3, 7.4],
+    sample: { local: 'Menara Berkembar Petronas', addr: 'Kuala Lumpur City Centre, 50088 Kuala Lumpur', price: '380', title: 'Malaysia 2027' },
+    bookNote: POSTCARD, driver: ['Please take us here', 'Tolong hantar kami ke alamat ini'],
+    phrases: PH(
+      [['Hello', 'Helo', 'heh-LOH'], ['Thank you', 'Terima kasih', 'teh-REE-mah KAH-seh'], ['Excuse me, sorry', 'Maaf', 'mah-AHF'], ["I don't speak Malay", 'Saya tidak boleh berbahasa Melayu', 'SAH-yah TEE-dak BOH-leh ber-bah-HAH-sah meh-LAH-yoo']],
+      [['Where is the station?', 'Di mana stesen?', 'dee MAH-nah STEH-sen?'], ['Please take me to this address', 'Tolong hantar saya ke alamat ini', 'TOH-long HAHN-tar SAH-yah keh ah-LAH-mat EE-nee'], ['Two tickets, please', 'Dua tiket', 'DOO-ah TEE-ket'], ['How much is it?', 'Berapa harganya?', 'beh-RAH-pah har-GAH-nyah?']],
+      [['A table for two, please', 'Meja untuk dua orang', 'MEH-jah OON-took DOO-ah OH-rang'], ['This one, please', 'Saya mahu yang ini', 'SAH-yah MAH-hoo yang EE-nee'], ['The bill, please', 'Minta bil', 'MIN-tah bil'], ['Can I pay by card?', 'Boleh bayar dengan kad?', 'BOH-leh BAH-yar DENG-an kad?'], ['Delicious!', 'Sedap!', 'seh-DAHP']],
+      [['We have a reservation', 'Kami ada tempahan', 'KAH-mee AH-dah tem-PAH-han'], ['Could you keep our luggage?', 'Boleh simpan beg kami?', 'BOH-leh SIM-pan beg KAH-mee?'], ['What time is check-out?', 'Pukul berapa daftar keluar?', 'POO-kool beh-RAH-pah DAF-tar keh-LOO-ar?']])
+  },
+  PH: {
+    name: 'Philippines', cur: 'PHP', lang: 'tl', langName: 'Filipino', font: '', book: 'postcards', bbox: [116.9, 4.6, 126.6, 21.1],
+    sample: { local: 'Intramuros', addr: 'Intramuros, Maynila, 1002 Kalakhang Maynila', price: '4500', title: 'Philippines 2027' },
+    bookNote: POSTCARD, driver: ['Please take us here', 'Dito po sa address na ito'],
+    phrases: PH(
+      [['Hello, how are you?', 'Kumusta po', 'koo-moos-TAH poh'], ['Thank you', 'Salamat po', 'sah-LAH-mat poh'], ['Excuse me, sorry', 'Pasensya na po', 'pah-SEN-shah nah poh'], ["I don't speak Tagalog", 'Hindi po ako marunong mag-Tagalog', 'hin-DEE poh ah-KOH mah-ROO-nong mag tah-GAH-log']],
+      [['Where is the station?', 'Saan po ang istasyon?', 'sah-AHN poh ahng is-tas-YON?'], ['Please take me to this address', 'Dito po sa address na ito', 'DEE-toh poh sah address nah ee-TOH'], ['Two tickets, please', 'Dalawang tiket po', 'dah-lah-WAHNG TEE-ket poh'], ['How much is it?', 'Magkano po?', 'mag-KAH-noh poh?']],
+      [['A table for two, please', 'Mesa po para sa dalawa', 'MEH-sah poh PAH-rah sah dah-lah-WAH'], ['This one, please', 'Ito po', 'ee-TOH poh'], ['The bill, please', 'Pahingi po ng bill', 'pah-hing-EE poh nahng bill'], ['Can I pay by card?', 'Pwede po bang magbayad gamit ang card?', 'PWEH-deh poh bahng mag-BAH-yad GAH-mit ahng card?'], ['Delicious!', 'Masarap!', 'mah-sah-RAHP']],
+      [['We have a reservation', 'May reservation po kami', 'my reservation poh kah-MEE'], ['Could you keep our luggage?', 'Pwede po bang iwan ang bagahe namin?', 'PWEH-deh poh bahng EE-wan ahng bah-GAH-heh NAH-min?'], ['What time is check-out?', 'Anong oras po ang check-out?', 'ah-NONG OH-ras poh ahng check-out?']])
+  },
+  IS: {
+    name: 'Iceland', cur: 'ISK', lang: 'is', langName: 'Icelandic', font: '', book: 'postcards', bbox: [-24.6, 63.3, -13.4, 66.6],
+    sample: { local: 'Hallgrímskirkja', addr: 'Hallgrímstorg 1, 101 Reykjavík', price: '32000', title: 'Iceland 2027' },
+    bookNote: POSTCARD, driver: ['Please take us here', 'Á þetta heimilisfang, takk'],
+    phrases: PH(
+      [['Hello, good day', 'Góðan daginn', 'GOH-than DYE-in'], ['Thank you', 'Takk fyrir', 'tahk FIH-rir'], ['Excuse me, sorry', 'Afsakið', 'AHF-sah-kith'], ["I don't speak Icelandic", 'Ég tala ekki íslensku', 'yeh TAH-lah EH-kih EES-len-skuh']],
+      [['Where is the bus stop?', 'Hvar er strætóstöðin?', 'kvar er STRY-toh-stur-thin?'], ['Please take me to this address', 'Á þetta heimilisfang, takk', 'ow THEH-tah HAY-mi-lis-fahnk, tahk'], ['Two tickets, please', 'Tvo miða, takk', 'tvoh MIH-tha, tahk'], ['How much is it?', 'Hvað kostar þetta?', 'kvath KOS-tar THEH-tah?']],
+      [['A table for two, please', 'Borð fyrir tvo, takk', 'borth FIH-rir tvoh, tahk'], ['This one, please', 'Þetta, takk', 'THEH-tah, tahk'], ['The bill, please', 'Reikninginn, takk', 'RAYK-ning-in, tahk'], ['Can I pay by card?', 'Get ég borgað með korti?', 'get yeh BOR-gath meth KOR-tih?'], ['Very good!', 'Mjög gott!', 'myurg got']],
+      [['We have a reservation', 'Við eigum bókað', 'vith AY-um BOH-kath'], ['Could you keep our luggage?', 'Getum við geymt farangurinn hér?', 'GEH-tum vith gaymt FAH-rang-ur-in hyer?'], ['What time is check-out?', 'Hvenær er útritun?', 'KVEH-nyr er OOT-rih-tun?']])
+  },
+  NO: {
+    name: 'Norway', cur: 'NOK', lang: 'no', langName: 'Norwegian', font: '', book: 'postcards', bbox: [4.5, 57.9, 31.2, 71.2],
+    sample: { local: 'Bryggen', addr: 'Bryggen, 5003 Bergen', price: '1900', title: 'Norway 2027' },
+    bookNote: POSTCARD, driver: ['Please take us here', 'Til denne adressen, takk'],
+    phrases: PH(
+      [['Hello', 'Hei', 'hay'], ['Thank you very much', 'Tusen takk', 'TOO-sen tahk'], ['Excuse me, sorry', 'Unnskyld', 'OON-shool'], ["I don't speak Norwegian", 'Jeg snakker ikke norsk', 'yay SNAH-ker IK-keh norshk']],
+      [['Where is the station?', 'Hvor er stasjonen?', 'voor ar stah-SHOH-nen?'], ['Please take me to this address', 'Til denne adressen, takk', 'til DEN-neh ah-DRES-sen, tahk'], ['Two tickets, please', 'To billetter, takk', 'too bil-LET-ter, tahk'], ['How much is it?', 'Hva koster det?', 'vah KOS-ter deh?']],
+      [['A table for two, please', 'Et bord til to, takk', 'et boor til too, tahk'], ['This one, please', 'Denne, takk', 'DEN-neh, tahk'], ['The bill, please', 'Regningen, takk', 'RYE-ning-en, tahk'], ['Can I pay by card?', 'Kan jeg betale med kort?', 'kahn yay beh-TAH-leh meh kort?'], ['Delicious!', 'Nydelig!', 'NEE-deh-lee']],
+      [['We have a reservation', 'Vi har en reservasjon', 'vee har en reh-ser-vah-SHOHN'], ['Could you keep our luggage?', 'Kan vi sette igjen bagasjen her?', 'kahn vee SET-teh ee-YEN bah-GAH-shen har?'], ['What time is check-out?', 'Når er utsjekk?', 'nor ar OOT-shek?']])
+  },
+  SE: {
+    name: 'Sweden', cur: 'SEK', lang: 'sv', langName: 'Swedish', font: '', book: 'postcards', bbox: [11.0, 55.3, 24.2, 69.1],
+    sample: { local: 'Vasamuseet', addr: 'Galärvarvsvägen 14, 115 21 Stockholm', price: '1800', title: 'Sweden 2027' },
+    bookNote: POSTCARD, driver: ['Please take us here', 'Till den här adressen, tack'],
+    phrases: PH(
+      [['Hello', 'Hej', 'hay'], ['Thank you very much', 'Tack så mycket', 'tahk soh MIK-ket'], ['Excuse me, sorry', 'Ursäkta', 'OOR-shek-tah'], ["I don't speak Swedish", 'Jag talar inte svenska', 'yah TAH-lar IN-teh SVEN-skah']],
+      [['Where is the station?', 'Var ligger stationen?', 'var LIG-ger stah-SHOH-nen?'], ['Please take me to this address', 'Till den här adressen, tack', 'til den har ah-DRES-sen, tahk'], ['Two tickets, please', 'Två biljetter, tack', 'tvoh bil-YET-ter, tahk'], ['How much is it?', 'Vad kostar det?', 'vah KOS-tar deh?']],
+      [['A table for two, please', 'Ett bord för två, tack', 'et boord fur tvoh, tahk'], ['This one, please', 'Den här, tack', 'den har, tahk'], ['The bill, please', 'Notan, tack', 'NOO-tan, tahk'], ['Can I pay by card?', 'Kan jag betala med kort?', 'kahn yah beh-TAH-lah meh koort?'], ['Delicious!', 'Jättegott!', 'YET-teh-got']],
+      [['We have a reservation', 'Vi har en bokning', 'vee har en BOOK-ning'], ['Could you keep our luggage?', 'Kan vi lämna bagaget här?', 'kahn vee LEM-nah bah-GAH-shet har?'], ['What time is check-out?', 'När är utcheckning?', 'nar ar OOT-chek-ning?']])
+  },
+  DK: {
+    name: 'Denmark', cur: 'DKK', lang: 'da', langName: 'Danish', font: '', book: 'postcards', bbox: [8.0, 54.5, 15.3, 57.8],
+    sample: { local: 'Nyhavn', addr: 'Nyhavn, 1051 København K', price: '1400', title: 'Denmark 2027' },
+    bookNote: POSTCARD, driver: ['Please take us here', 'Til denne adresse, tak'],
+    phrases: PH(
+      [['Hello', 'Hej', 'hi'], ['Thank you very much', 'Mange tak', 'MANG-eh tahk'], ['Excuse me, sorry', 'Undskyld', 'OON-skool'], ["I don't speak Danish", 'Jeg taler ikke dansk', 'yai TAY-ler IK-keh dansk']],
+      [['Where is the station?', 'Hvor er stationen?', 'vor air stah-SHOH-nen?'], ['Please take me to this address', 'Til denne adresse, tak', 'til DEN-neh ah-DRES-seh, tahk'], ['Two tickets, please', 'To billetter, tak', 'toh bee-LET-ter, tahk'], ['How much is it?', 'Hvad koster det?', 'vath KOS-ter deh?']],
+      [['A table for two, please', 'Et bord til to, tak', 'et bor til toh, tahk'], ['This one, please', 'Den her, tak', 'den hair, tahk'], ['The bill, please', 'Regningen, tak', 'RYE-ning-en, tahk'], ['Can I pay by card?', 'Kan jeg betale med kort?', 'kan yai beh-TAY-leh meth kort?'], ['Delicious!', 'Det smager dejligt!', 'deh SMAY-er DIE-leet']],
+      [['We have a reservation', 'Vi har en reservation', 'vee har en reh-ser-vah-SHOHN'], ['Could you keep our luggage?', 'Kan vi efterlade vores bagage her?', 'kan vee EF-ter-lay-theh VOR-es bah-GAH-sheh hair?'], ['What time is check-out?', 'Hvornår er der check-ud?', 'vor-NOR air dair check-ooth?']])
+  },
+  // anywhere not listed: the map, plan, spend and keepsake all work; there is no phrase card, and the traveller picks the local money
+  XX: {
+    name: 'Somewhere else', cur: 'USD', lang: 'en', langName: '', font: '', book: 'postcards', bbox: [-170, -56, 170, 72], any: true,
+    sample: { local: '', addr: '', price: '200', title: 'Our trip 2027' }, bookNote: POSTCARD, driver: TAKE_US, phrases: []
+  }
+});
+// the picker lists countries by name, with Somewhere else at the foot
+const COUNTRY_LIST = Object.entries(COUNTRIES).map(([code, c]) => ({ code, name: c.name, any: !!c.any })).sort((a, b) => a.any - b.any || a.name.localeCompare(b.name));
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -801,11 +1037,12 @@ function applySettings(st) {
   const nm = Array.isArray(st.names) ? st.names : [];
   const country = COUNTRIES[st.country] ? st.country : d.country || 'JP', home = HOMES.includes(st.home) ? st.home : d.home || 'AUD';
   S.settings = {
-    country, home, look: LOOKS[st.look] ? st.look : 'ochre',
+    country, home, cur: COUNTRIES[country].any ? (CUR[st.cur] ? st.cur : home) : '', look: LOOKS[st.look] ? st.look : 'ochre',
     rate: numv(st.rate) > 0 && st.rate < 1e6 ? st.rate : country === 'JP' ? d.rate || 113 : 0, budget: numv(st.budget) >= 0 && st.budget ? st.budget : d.budget || 0,
     names: [str(nm[0]).trim() || (d.names && d.names[0]) || 'Me', str(nm[1]).trim() || (d.names && d.names[1]) || 'Partner'],
     title: str(st.title).trim() || d.title || 'Our trip', start: isIso(st.start) ? st.start : d.start || '', end: isIso(st.end) ? st.end : d.end || ''
   };
+  if (COUNTRIES[country].any) COUNTRIES[country].cur = S.settings.cur;   // Somewhere else has no money of its own: the traveller picks it
   TRIP.country = S.settings.country; applyCountry(); applyLook(S.settings.look);
   setTrip(S.settings.start, S.settings.end);
 }
@@ -1219,7 +1456,7 @@ async function searchOnline(q, near) {
   if (!q || q.length < 3 || navigator.onLine === false) return [];
   const b = COUNTRY().bbox, box = [b[0] - 1, b[1] - 1, b[2] + 1, b[3] + 1].map(v => v.toFixed(2)).join(',');
   const bias = near ? `&lat=${near.lat.toFixed(4)}&lon=${near.lng.toFixed(4)}&zoom=${Math.round(Math.max(4, Math.min(16, near.z || 10)))}` : '';
-  const url = l => `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8&bbox=${box}${bias}${l ? '&lang=' + l : ''}`;
+  const url = l => `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8${COUNTRY().any ? '' : '&bbox=' + box}${bias}${l ? '&lang=' + l : ''}`;
   const get = async u => { const c = new AbortController(), t = setTimeout(() => c.abort(), 6000); try { const r = await fetch(u, { signal: c.signal }); return r.ok ? await r.json() : null; } catch (e) { return null; } finally { clearTimeout(t); } };
   const [en, loc] = await Promise.all([get(url('en')), COUNTRY().lang === 'en' ? null : get(url(''))]);
   if (!en || !Array.isArray(en.features)) return [];
@@ -1691,6 +1928,7 @@ function stampsHTML() {
 }
 function phrasesHTML() {
   let i = 0;
+  if (!PHRASES_NOW().length) return viewHead('Phrases', 'Not for this trip') + `<div class="sec"><div class="muted">Waymark has a phrase card for each country in its list. This trip is set to ${esc(COUNTRY().name.toLowerCase())}, so there isn't one. Everything else works the same.</div></div>`;
   return viewHead(phrasesTitle(), 'Tap one to show it full screen') + PHRASES_NOW().map(([group, list]) => `<div class="sec"><span class="label">${esc(group)}</span><div class="phrases">${list.map(([en, jp, ro]) => `<button class="phrase" type="button" data-phrase="${i++}"><span class="en">${esc(en)}</span><span class="jp">${esc(jp)}</span><span class="ro">${esc(ro)}</span></button>`).join('')}</div></div>`).join('');
 }
 function moreHTML() {
@@ -1700,7 +1938,7 @@ function moreHTML() {
     item('stays', 'Stays', glyph('stay', { status: 'booked' }), `${n.filter(p => p.kind === 'stay').length} stays and the nights still to sort`) +
     item('notes', 'Notes and maybes', glyph('note'), `${n.filter(p => p.kind === 'note').length} notes`) +
     item('stamps', BOOK().title, glyph('see'), `${n.filter(p => p.visited).length} ${BOOK().count}`) +
-    item('phrases', phrasesTitle(), glyph('food'), COUNTRY().words ? `Words and customs that differ in ${esc(COUNTRY().name)}` : `${esc(LANG())} to show staff and drivers`) +
+    item('phrases', phrasesTitle(), glyph('food'), !PHRASES_NOW().length ? 'No phrase card for this trip' : COUNTRY().words ? `Words and customs that differ in ${esc(COUNTRY().name)}` : `${esc(LANG())} to show staff and drivers`) +
     (canEdit() ? `<div class="sec"><span class="label">Add from websites</span><div class="acts"><button class="btn" type="button" data-paste>${icon('clip')}Paste from a site or email</button><button class="btn" type="button" data-pdf>${icon('doc')}Import a booking PDF</button><button class="btn" type="button" data-gmimport>${icon('download')}Import a Google Maps list</button><a class="btn" href="${PWA ? 'clip.html' : CLIP_PAGE}" target="_blank" rel="noopener">${icon('link')}Set up the Add to Waymark button</a></div><div class="fine">On a booking or ticket page in Safari or Brave, tap your Add to Waymark bookmark, then come back here and paste. Booking PDFs saved in Files can be imported too. A Saved or shared Google Maps list comes in as maybes. Add ticket screenshots from a place's card.</div></div>` : '') +
     (PWA ? `<div class="sec"><span class="label">This phone</span><div class="acts"><button class="btn" type="button" data-act="share">${icon('share')}Share trip file</button><label class="btn">${icon('upload')}Import trip file<input type="file" class="tripImport" accept=".json,application/json" hidden></label><button class="btn" type="button" data-act="settings">${icon('settings')}Trip settings</button><button class="btn" type="button" data-act="trips">${icon('route')}Trips and next country</button></div><div class="fine">Each phone keeps its own copy. To sync, share your trip file and import it on the other phone. The newest change wins.</div></div>` : '');
 }
@@ -2685,6 +2923,7 @@ uiReady = true; onCountry();
    (a list's .csv, or Saved Places.json), or a My Maps .kml. Each place becomes a maybe, pinned on the map. */
 const JP_WIDE = [122, 20, 154, 46.5]; // Okinawa to Hokkaido, as the Add to Waymark button has always judged Japan
 function inTripCountry(lat, lng) {
+  if (COUNTRY().any) return true;
   const c = COUNTRY().bbox, b = TRIP_COUNTRY() === 'JP' ? JP_WIDE : [c[0] - 1.5, c[1] - 1.5, c[2] + 1.5, c[3] + 1.5];
   return lng >= b[0] && lng <= b[2] && lat >= b[1] && lat <= b[3];
 }
@@ -3243,7 +3482,7 @@ function openTrip(id, dropBlank) {
   try { localStorage.setItem(LKEY, raw); localStorage.removeItem(LKEY + '.' + id); const r = tripsReg(); r.active = id; saveReg(r); } catch (e) { toast('This phone is out of space.'); return; }
   location.reload();
 }
-const NEXT_GUESS = { JP: 'KR', KR: 'JP', TW: 'JP', TH: 'VN', VN: 'TH', ID: 'TH', IT: 'FR', FR: 'ES', ES: 'PT', PT: 'ES', GR: 'IT', DE: 'FR', GB: 'FR', US: 'JP', NZ: 'JP' };
+const NEXT_GUESS = { AU: 'NZ', CA: 'US', IE: 'GB', SG: 'MY', FJ: 'NZ', MX: 'US', AR: 'BR', PE: 'AR', BR: 'AR', TR: 'GR', NL: 'DE', AT: 'DE', CH: 'IT', HR: 'IT', CZ: 'AT', MY: 'SG', PH: 'JP', IS: 'GB', NO: 'SE', SE: 'DK', DK: 'SE', XX: 'XX', JP: 'KR', KR: 'JP', TW: 'JP', TH: 'VN', VN: 'TH', ID: 'TH', IT: 'FR', FR: 'ES', ES: 'PT', PT: 'ES', GR: 'IT', DE: 'FR', GB: 'FR', US: 'JP', NZ: 'JP' };
 function startTrip(next) {
   const st = local.settings; if (!parkTrip()) return;
   const cc = COUNTRIES[st.country] ? st.country : 'JP';
@@ -3321,6 +3560,7 @@ function openSettings(first) {
       <div class="field"><label for="stMe">Your name</label><input class="input" id="stMe" autocomplete="given-name" value="${esc(st.me || '')}" placeholder="Shown on things you add"></div>
       <div class="field"><label for="stCountry">Country</label><select class="input" id="stCountry"${has ? ' disabled' : ''}>${COUNTRY_LIST.map(c => opt(c.code, c.name, c.code === cc)).join('')}</select>
         <small class="hint" id="stCountryHint">${has ? 'Set when the trip was made. Start a new trip to change it.' : 'Sets the phrases, money, local names and the keepsake book.'}</small></div>
+      <div class="field" id="stCurField" hidden><label for="stCur">Local money</label><select class="input" id="stCur"${has ? ' disabled' : ''}>${Object.entries(CUR).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([k, c]) => opt(k, `${c.name} (${k})`, k === (CUR[st.cur] ? st.cur : 'USD'))).join('')}</select><small class="hint">The money you will pay in there. There is no phrase card for a country outside the list; the map, plan, spending and keepsake book all work.</small></div>
       <div class="field"><span class="flabel" id="stLookLbl">Colours</span><div class="looks" role="radiogroup" aria-labelledby="stLookLbl">${Object.entries(LOOKS).map(([k, l]) => `<button class="look" type="button" role="radio" aria-checked="${k === look}" data-lookpick="${k}"><span class="look-sw" style="background:linear-gradient(135deg,${l.sw[0]} 50%,${l.sw[1]} 50%)"></span>${esc(l.name)}</button>`).join('')}</div>
         <small class="hint">Ochre turns indigo at night with your phone. Paper white and Stone stay light, and Indigo stays dark. Change it any time in Trip settings.</small></div>
       <div class="field"><label for="stTitle">Trip name</label><input class="input" id="stTitle" value="${esc(st.title || '')}" placeholder="${esc(COUNTRIES[cc].sample.title)}"></div>
@@ -3331,24 +3571,26 @@ function openSettings(first) {
       <small class="hint" id="stRateNote"></small></div>
     <div class="dlg-f"><button class="btn btn-primary" type="submit">${!first ? 'Save' : st.after ? 'Continue the trip' : 'Start a new trip'}</button>${first ? (others ? '<button class="btn" type="button" data-back>Cancel and go back</button>' : '') : '<button class="btn" type="button" data-sx>Cancel</button>'}</div></form>`;
   document.body.appendChild(el);
-  const cSel = $('#stCountry'), hSel = $('#stHome'), rate = $('#stRate'), note = $('#stRateNote');
+  const cSel = $('#stCountry'), hSel = $('#stHome'), rate = $('#stRate'), note = $('#stRateNote'), curSel = $('#stCur');
+  const curNow = () => COUNTRIES[cSel.value].any ? curSel.value : COUNTRIES[cSel.value].cur;   // the local money: the country's own, or the one picked for Somewhere else
   let auto = !st.rate; // the rate fills itself in until someone types one
   const sync = () => {
-    const c = COUNTRIES[cSel.value], h = CUR[hSel.value], l = CUR[c.cur];
-    $('#stRateLbl').textContent = `${h.pre.trim()}1 buys`; rate.placeholder = `${l.pre.trim()} ${c.cur === 'JPY' && hSel.value === 'AUD' ? '113' : ''}`.trim();
+    const c = COUNTRIES[cSel.value], h = CUR[hSel.value], cur = curNow(), l = CUR[cur]; $('#stCurField').hidden = !c.any;
+    $('#stRateLbl').textContent = `${h.pre.trim()}1 buys`; rate.placeholder = `${l.pre.trim()} ${cur === 'JPY' && hSel.value === 'AUD' ? '113' : ''}`.trim();
     $('#stTitle').placeholder = c.sample.title;
-    note.textContent = hSel.value === c.cur ? `${c.name} uses your home money, so no rate is needed.` : `How many ${l.name.toLowerCase()} one ${h.pre.trim()} buys. Waymark uses it to show prices in ${/^(Australian|Canadian|Singapore|US|NZ|NT)\b/.test(h.name) ? h.name : h.name.toLowerCase()}.`;
+    note.textContent = hSel.value === cur ? `${c.any ? 'This trip' : c.name} uses your home money, so no rate is needed.` : `How many ${l.name.toLowerCase()} one ${h.pre.trim()} buys. Waymark uses it to show prices in ${/^(Australian|Canadian|Singapore|US|NZ|NT)\b/.test(h.name) ? h.name : h.name.toLowerCase()}.`;
   };
   const getRate = async loud => {
-    const c = COUNTRIES[cSel.value], h = hSel.value, key = h + c.cur; if (h === c.cur) { rate.value = 1; return; }
+    const cur = curNow(), h = hSel.value, key = h + cur; if (h === cur) { rate.value = 1; return; }
     if (navigator.onLine === false) { if (loud) toast('Connect to the internet to get today\'s rate, or type it in.'); return; }
     note.textContent = 'Getting today\'s rate…';
-    const v = await fetchRate(h, c.cur); if (!el.isConnected || hSel.value + COUNTRIES[cSel.value].cur !== key) return;
-    if (v) { rate.value = v; auto = true; sync(); note.textContent += ` Today's rate filled in: ${CUR[h].pre.trim()}1 = ${CUR[c.cur].pre}${v}.`; }
+    const v = await fetchRate(h, cur); if (!el.isConnected || hSel.value + curNow() !== key) return;
+    if (v) { rate.value = v; auto = true; sync(); note.textContent += ` Today's rate filled in: ${CUR[h].pre.trim()}1 = ${CUR[cur].pre}${v}.`; }
     else { sync(); if (loud) toast('The rate couldn\'t be fetched. Type it in instead.'); }
   };
   sync(); if (auto && !has) getRate(false);
   cSel.addEventListener('change', () => { sync(); if (auto) { rate.value = ''; getRate(false); } });
+  curSel.addEventListener('change', () => { sync(); if (auto) { rate.value = ''; getRate(false); } });
   hSel.addEventListener('change', () => { sync(); if (auto || !has) { rate.value = ''; getRate(false); } });
   rate.addEventListener('input', () => { auto = false; });
   $('#stRateGet').onclick = () => getRate(true);
@@ -3361,7 +3603,7 @@ function openSettings(first) {
     const rv = parseFloat(String(rate.value).replace(',', '.'));
     if (rate.value.trim() && !(rv > 0 && rv < 1e6)) { rate.focus(); toast('Enter the rate as a number, or leave it empty.'); return; }
     const me = $('#stMe').value.trim().slice(0, 24), country = has ? cc : cSel.value, c = COUNTRIES[country];
-    local.settings = { ...local.settings, me, country, look, home: hSel.value, rate: rv > 0 ? rv : 0, title: $('#stTitle').value.trim().slice(0, 60) || c.sample.title.replace(/\d{4}$/, s.slice(0, 4)), start: s, end: en, names: [$('#stN0').value.trim().slice(0, 24) || me || 'Me', $('#stN1').value.trim().slice(0, 24) || 'Partner'], seen: true, at: Date.now() };
+    local.settings = { ...local.settings, me, country, look, ...(c.any ? { cur: has && CUR[st.cur] ? st.cur : curSel.value } : {}), home: hSel.value, rate: rv > 0 ? rv : 0, title: $('#stTitle').value.trim().slice(0, 60) || c.sample.title.replace(/\d{4}$/, s.slice(0, 4)), start: s, end: en, names: [$('#stN0').value.trim().slice(0, 24) || me || 'Me', $('#stN1').value.trim().slice(0, 24) || 'Partner'], seen: true, at: Date.now() };
     S.meId = me ? 'n:' + me : 'local'; saveLocal(); noteTrip();
     // a new trip or the next country starts clean: the map, phrases and money all follow the country
     if (first && others) { location.reload(); return; }
